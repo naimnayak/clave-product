@@ -5,6 +5,7 @@ import { AuthDivider, AuthHeading, FormError, GoogleButton } from '@/components/
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { linkStyles } from '@/components/ui/linkStyles'
+import { legalPaths } from '@/components/legal/legalInfo'
 import { paths } from '@/routes/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { isValidEmail } from '@/utils/validation'
@@ -48,7 +49,7 @@ export function SignupPage() {
 
   return (
     <>
-      <AuthHeading title="Create your account" description="Start building your next in a few minutes." />
+      <AuthHeading title="Create your account" description="Start building your next resume in a few minutes." />
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
         <FormError message={formError} />
         <Input
@@ -86,7 +87,18 @@ export function SignupPage() {
         loading={pending === 'google'}
         disabled={pending === 'form'}
       />
-      <p className="mt-8 text-center text-sm text-secondary">
+      <p className="mt-5 text-center text-xs leading-relaxed text-muted">
+        By creating an account, you agree to Clave’s{' '}
+        <Link to={legalPaths.terms} target="_blank" rel="noopener" className={linkStyles}>
+          Terms of Service
+        </Link>{' '}
+        and{' '}
+        <Link to={legalPaths.privacy} target="_blank" rel="noopener" className={linkStyles}>
+          Privacy Policy
+        </Link>
+        , and confirm you are 18 or older.
+      </p>
+      <p className="mt-6 text-center text-sm text-secondary">
         Already have an account?{' '}
         <Link to={paths.login} className={linkStyles}>
           Log in

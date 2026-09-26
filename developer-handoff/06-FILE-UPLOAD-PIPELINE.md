@@ -1,134 +1,52 @@
-# 06 — File Upload & Resume Parsing Pipeline
+# 06 · File Upload Pipeline
 
-This document defines the file upload, storage, text extraction, and resume parsing pipeline for Clave.
+Code: `app/api/files.py`, `app/services/documents.py`, `app/services/storage.py`. Frontend: `src/services/resumeUpload.service.ts`, `import.service.ts` (`apiClient.upload`, 60 s timeout).
 
----
+## Flow
 
-## 1. Overview & Upload Pipeline
+```
+POST /api/files/upload (multipart "file")
+  → size check (MAX_UPLOAD_BYTES, 10 MB)        400 FILE_TOO_LARGE / EMPTY_FILE
+  → type detection by magic bytes               400 UNSUPPORTED_FILE_TYPE
+  → text extraction (pypdf / python-docx)       400 UNREADABLE_FILE
+  → store bytes (bucket or MongoDB) + files record with extracted text
+  ← {fileId, fileName, fileSize, fileType, status: "ready"}
 
-Users can upload existing PDF or DOCX resumes during onboarding or from the resumes dashboard.
+POST /api/files/{fileId}/parse-resume   → AI → ResumeDocument for review (not saved)
+POST /api/files/{fileId}/parse-profile  → AI → ProfileData draft for onboarding (not saved)
 
-```text
-[Client / Browser]
-       │
-       │ 1. Multipart POST /api/files/upload (PDF/DOCX <= 10MB)
-       ▼
-[FastAPI Validation Layer]
-       │ 2. Check Content-Length & magic bytes
-       │ 3. Store raw file in S3 / Supabase Storage
-       ▼
-[Text Extraction Engine]
-       │ 4. Extract plain text (pdfplumber / python-docx)
-       ▼
-[AI Parsing Service]
-       │ 5. Parse into structured ResumeContent & ProfileData
-       ▼
-[Review & Confirmation Flow]
-       │ 6. Return candidate profile data for user review
-       │ 7. Save to CareerProfile / Resumes only upon user approval
+POST /api/resumes {sourceType: "upload", sourceFileId, ...}   → saves the reviewed resume (free, once per file)
+DELETE /api/files/{fileId}                                     → removes record and stored bytes
 ```
 
----
+## Validation (`services/documents.py`)
 
-## 2. File Validation & Size Limits
+- Type comes from content, never the name or Content-Type: `%PDF-` → pdf; a ZIP containing `word/document.xml` → docx. Legacy `.doc` gets a specific "save as .docx or PDF" message.
+- PDF: first 10 pages; empty-password encrypted PDFs are decrypted, others fail with `UNREADABLE_FILE`. DOCX: paragraphs plus table rows.
+- Extracted text is capped at 60,000 characters.
+- File names are reduced to the base name, unsafe characters replaced, max 200 chars.
 
-1. **Size Limit**: Strictly enforce a maximum size of **10 MB** (10,485,760 bytes).
-2. **Format Limit**: Only allow `.pdf` and `.docx`.
-3. **Magic Byte Validation**: Never trust the user-supplied `Content-Type` header or file extension alone. Validate using file magic headers:
-   - PDF: `%PDF-` (`0x25 0x50 0x44 0x46`)
-   - DOCX: `PK\x03\x04` (Zip archive signature for Office Open XML)
+## Storage (`services/storage.py`)
 
-### FastAPI Upload Handler
-```python
-import io
-import filetype
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
-from app.models.user import User
-from app.core.security import get_current_user
+| Mode | When | Where |
+|---|---|---|
+| Bucket | `UPLOAD_BUCKET` set | Firebase/Cloud Storage bucket via `firebase-admin`, object `<UPLOAD_PREFIX>/<uid>/<fileId>`; the record holds `storage: "bucket"`, `objectName` |
+| MongoDB | default | Bytes inline in the `files` record as `Binary` (`storage: "mongo"`) |
 
-router = APIRouter()
+## Parsing
 
-MAX_FILE_SIZE = 10 * 1024 * 1024 # 10 MB
+- Requires text or, for PDFs, the original bytes; otherwise `400 UNREADABLE_FILE`.
+- If a PDF yields fewer than 200 characters of text (scanned/image PDF), the PDF itself is sent to the AI model.
+- Parsing is an AI action (daily allowance, refunded on failure, `AI_RATE_LIMIT`). Uploading is not.
+- `parse-resume` fills missing contact name/email from the account, normalizes through `ResumeDocumentIn`, and returns a heuristic ATS score.
 
-@router.post("/files/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
-):
-    contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": {"code": "FILE_TOO_LARGE", "message": "File exceeds the 10 MB maximum limit."}}
-        )
+## Saving uploads as resumes
 
-    # Validate actual file content
-    kind = filetype.guess(contents)
-    valid_mimes = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
-    
-    # Fallback check for docx which is a zip file
-    if kind is None or (kind.mime not in valid_mimes and not file.filename.endswith(".docx")):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": {"code": "UNSUPPORTED_FILE_TYPE", "message": "Only PDF and DOCX files are supported."}}
-        )
+Uploaded resumes are the user's own documents, so they don't consume a resume credit. `POST /api/resumes` with `sourceType: "upload"` must include `sourceFileId`; the file is atomically claimed (`resumeId` set). A second save of the same upload, or an expired upload, returns `409 CONFLICT`. If resume creation fails, the claim is released.
 
-    # Save to storage (S3 / Supabase Storage)
-    storage_path = f"resumes/{current_user.id}/{file.filename}"
-    # await storage_service.upload(storage_path, contents, kind.mime)
+## Retention
 
-    return {
-        "data": {
-            "fileId": str(uuid.uuid4()),
-            "fileName": file.filename,
-            "fileSize": len(contents),
-            "fileType": "pdf" if "pdf" in (kind.mime if kind else "") else "docx",
-            "status": "ready"
-        }
-    }
-```
-
----
-
-## 3. Text Extraction Pipeline
-
-### PDF Extraction with `pdfplumber`
-```python
-import pdfplumber
-import io
-
-def extract_text_from_pdf(file_bytes: bytes) -> str:
-    extracted_text = []
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text(layout=True)
-            if text:
-                extracted_text.append(text)
-    return "\n\n".join(extracted_text)
-```
-
-### DOCX Extraction with `python-docx`
-```python
-import docx
-import io
-
-def extract_text_from_docx(file_bytes: bytes) -> str:
-    doc = docx.Document(io.BytesIO(file_bytes))
-    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-    return "\n".join(paragraphs)
-```
-
----
-
-## 4. AI Structured Parsing & User Confirmation
-
-Once raw text is extracted:
-1. Pass raw text to `AIService.parse_resume_text(raw_text)`.
-2. AI extracts:
-   - Personal information (Name, Email, Phone, Location, Links)
-   - Work Experience (Company, Role, Dates, Bullets)
-   - Education (Degree, Institution, Dates, GPA/Details)
-   - Projects & Skills
-3. **Product Rule**: Do **not** overwrite the user's existing Career Profile automatically.
-   - Return parsed data to the frontend review screen (`/onboarding/review`).
-   - The user reviews, edits, and confirms the extracted entries before saving.
+- `files` records have a TTL index on `createdAt` of `UPLOAD_RETENTION_DAYS` (default 7 days). In MongoDB mode this deletes the bytes too.
+- Bucket objects are deleted by `storage.cleanup_expired()`, which runs in the API maintenance loop (every `JOB_INGEST_INTERVAL_HOURS`, or every 12 h when that is 0) and in `python -m app.cli.ingest_jobs`.
+- Saved resumes are independent documents and are not affected by upload expiry.
+- `DELETE /api/me` deletes all of the user's files and bucket objects.

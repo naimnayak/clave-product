@@ -13,6 +13,7 @@ import { paths } from '@/routes/navigation'
 import { toast } from '@/store/toastStore'
 import { computeAts } from '@/utils/ats'
 import { cn } from '@/utils/cn'
+import { printResume } from '@/utils/printResume'
 
 type MobileView = 'editor' | 'preview'
 
@@ -110,7 +111,15 @@ export function ResumeEditor({ id }: { id: string }) {
   }
 
   const changeTemplate = (template: typeof doc.template) => update((d) => ({ ...d, template }))
-  const download = () => toast.info('PDF download is coming soon', 'Exporting resumes isn\u2019t available yet.')
+  const download = async () => {
+    await saveNow()
+    toast.info('Choose “Save as PDF”', 'Pick it as the destination in the print dialog to download your resume.')
+    try {
+      await printResume(doc)
+    } catch (error) {
+      toast.error('Couldn’t prepare the PDF', error instanceof Error ? error.message : 'Please try again.')
+    }
+  }
 
   const zoomScale = ZOOM_STEPS[zoomIndex] / 100
 
@@ -125,10 +134,11 @@ export function ResumeEditor({ id }: { id: string }) {
         template={doc.template}
         onTemplateChange={changeTemplate}
         onSave={async () => {
-          await saveNow()
-          toast.success('Resume saved')
+          if (await saveNow()) toast.success('Resume saved')
         }}
-        onDownload={download}
+        onDownload={() => void download()}
+        resumeId={doc.id}
+        beforeReview={saveNow}
       />
 
       {/* ── Mobile tab bar ──────────────────────────────────────────────── */}
@@ -158,7 +168,7 @@ export function ResumeEditor({ id }: { id: string }) {
         </div>
         <div className="flex items-center gap-1.5 border-l border-border px-3">
           <TemplateMenu value={doc.template} onChange={changeTemplate} compact />
-          <DownloadButton onClick={download} compact />
+          <DownloadButton onClick={() => void download()} compact />
         </div>
       </div>
 
@@ -182,8 +192,8 @@ export function ResumeEditor({ id }: { id: string }) {
           className={cn(
             'min-h-0 flex-1 overflow-y-auto md:block',
             mobileView === 'preview' ? 'block' : 'hidden',
+            'bg-[var(--editor-canvas)]',
           )}
-          style={{ background: 'linear-gradient(180deg, #eef1ee 0%, #e8ece9 100%)' }}
         >
           <div className="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
             {/* Preview toolbar — zoom controls */}

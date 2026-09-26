@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Select } from '@/components/ui/Select'
-import { ALL, countActiveFilters, defaultFilters, experienceOptions, minMatchOptions, postedOptions, roleOptions, workTypeLabels } from '@/utils/jobFilters'
+import { ALL, countActiveFilters, defaultFilters, experienceOptions, minMatchOptions, postedOptions, workTypeLabels } from '@/utils/jobFilters'
 import type { JobFilterValues } from '@/utils/jobFilters'
 
 interface FilterSelectProps {
@@ -74,17 +74,19 @@ interface JobFiltersProps {
   onChange: (filters: JobFilterValues) => void
   /** Cities offered in the "All locations" menu. */
   locations: string[]
+  /** Role families offered in the "All roles" menu. */
+  roles: string[]
 }
 
 /** Role / Location / Experience / Work type, plus More filters. */
-export function JobFilters({ filters, onChange, locations }: JobFiltersProps) {
+export function JobFilters({ filters, onChange, locations, roles }: JobFiltersProps) {
   const [open, setOpen] = useState(false)
   const set = (patch: Partial<JobFilterValues>) => onChange({ ...filters, ...patch })
   const moreCount = countActiveFilters({ ...defaultFilters, posted: filters.posted, minMatch: filters.minMatch })
 
   return (
     <>
-      <FilterSelect bare label="Role" allLabel="All roles" value={filters.role} options={roleOptions} onChange={(role) => set({ role })} />
+      <FilterSelect bare label="Role" allLabel="All roles" value={filters.role} options={roles} onChange={(role) => set({ role })} />
       <Select aria-label="Location" value={filters.location} onChange={(event) => set({ location: event.target.value })}>
         <option value="">All locations</option>
         {locations.map((city) => (

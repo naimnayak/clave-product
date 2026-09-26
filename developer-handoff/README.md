@@ -1,112 +1,60 @@
-# CLAVE — Backend Developer Handoff
+# Clave Developer Handoff
 
-Welcome to the **Clave** backend engineering handoff package. This package specifies the complete backend architecture, database schema, API contracts, security models, and AI pipelines required to power the Clave AI-powered career workspace.
+These documents describe the system as it is implemented in this repository. When code and docs disagree, the code wins; please update the doc.
 
-> **CRITICAL RULE**: Do not redesign or modify the existing React/Vite frontend UI. The frontend is the consumer of this backend. The backend must adhere strictly to the contracts and workflows documented here.
+Clave helps students, freshers and early-career professionals keep one Career Profile, generate and tailor ATS-friendly resumes from it, check ATS fit, practise interviews and find jobs.
 
----
+## Stack
 
-## 1. Product Model & Philosophy
+| Layer | Implementation |
+|---|---|
+| Frontend | React 19 + Vite + TypeScript + Tailwind CSS v4 (`src/`). Zustand stores, React Router. |
+| API client | `src/services/apiClient.ts`: sends the Firebase ID token as `Authorization: Bearer`, a per-browser `X-Clave-Session` id, unwraps `{ data }`, maps `{ error }` to `ApiError`. Vite proxies `/api` to `http://localhost:8000`. |
+| Backend | FastAPI (`backend/app`), all routes under `/api`. |
+| Database | MongoDB via PyMongo `AsyncMongoClient` (`app/db/mongo.py`). |
+| Auth | Firebase Authentication; `firebase-admin` verifies ID tokens (`app/core/security.py`). Server-side device sessions (`app/services/sessions.py`). |
+| AI | An AI model provider, called through the AI provider's Python SDK (see `requirements.txt`), with schema-validated structured output (`app/services/ai_client.py`, `ai_tasks.py`). |
+| Payments | Razorpay one-time orders (`app/api/billing.py`). Checkout UI: Not implemented yet. |
+| Uploads | Optional cloud bucket, otherwise stored in MongoDB; 7-day retention (`app/services/storage.py`). |
+| Jobs | Demo seed catalog, plus a job feed from Apify actors structured by the AI model (`apify_jobs.py`, `job_ingest.py`). |
+| Email | Optional SMTP (`app/services/email.py`). |
+| Rate limits | slowapi (`app/core/limiter.py`) plus daily AI allowances per plan (`app/services/quota.py`). |
 
-Clave helps students, freshers, recent graduates, and early-career professionals:
-- Build and maintain a single **Career Profile**
-- Create ATS-friendly resumes
-- Generate resumes using AI
-- Tailor resumes to specific job descriptions
-- Analyze ATS alignment
-- Discover and save relevant jobs
-- Track resume versions
+## Documents
 
-### Core Product Loop
-```text
-Career Profile
-      ↓
-Job Opportunity
-      ↓
-Job Description
-      ↓
-Tailored Resume
-      ↓
-ATS Analysis
-      ↓
-Apply
+| File | Topic |
+|---|---|
+| [01-DATABASE-SCHEMA.md](01-DATABASE-SCHEMA.md) | MongoDB collections, key fields, indexes and TTLs |
+| [02-API-ENDPOINTS.md](02-API-ENDPOINTS.md) | Every endpoint, envelope and error codes |
+| [03-PYDANTIC-SCHEMAS.md](03-PYDANTIC-SCHEMAS.md) | Request and document models |
+| [04-AUTHENTICATION-SECURITY.md](04-AUTHENTICATION-SECURITY.md) | Firebase auth, sessions, CORS, rate limits |
+| [05-AI-SERVICE-ARCHITECTURE.md](05-AI-SERVICE-ARCHITECTURE.md) | AI client, tasks, anti-fabrication, limits |
+| [06-FILE-UPLOAD-PIPELINE.md](06-FILE-UPLOAD-PIPELINE.md) | Upload, extraction, parsing, retention |
+| [07-SUBSCRIPTION-USAGE.md](07-SUBSCRIPTION-USAGE.md) | Plans, credits, payments |
+| [08-PROJECT-STRUCTURE.md](08-PROJECT-STRUCTURE.md) | Repository layout |
+| [09-ENV-VARIABLES.md](09-ENV-VARIABLES.md) | Backend and frontend configuration |
+| [10-TEST-PLAN.md](10-TEST-PLAN.md) | Tests, lint, build, CI |
+| [11-SEED-MOCK-DATA.md](11-SEED-MOCK-DATA.md) | Demo jobs and the job feed |
+| [12-DEPLOYMENT-GUIDE.md](12-DEPLOYMENT-GUIDE.md) | Running in production |
+
+`API_DOCUMENTATION.md` is kept only as a pointer to 02.
+
+## Local development
+
+```bash
+# Backend (from backend/)
+python -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env            # fill in; put service-account files in backend/secrets/
+.venv/bin/uvicorn app.main:app --reload --port 8000
+
+# Frontend (from repo root)
+cp .env.example .env.local      # Firebase web config
+npm install && npm run dev      # http://localhost:5173, /api proxied to :8000
 ```
 
-### Golden Principles
-1. **Career Profile = Source of Truth**: The Career Profile contains the user's canonical professional history (education, experience, projects, skills, certifications, achievements, links). Resumes are generated presentations of this data.
-2. **Never Overwrite Original Resumes**: Tailoring an existing resume creates a **new resume** with `source_type = 'tailored'` and `source_resume_id = <original_id>`. The original resume remains untouched.
-3. **Anti-Fabrication Guarantee**: AI must never invent employers, degrees, dates, skills, metrics, or achievements. It may only rewrite, emphasize, and structure verified user data to match target roles.
-4. **Server-Side Enforcement**: All subscription tiers, quotas, rate limits, and access controls are strictly validated on the backend. Never trust client-side state.
-5. **Ownership Isolation**: Every user-owned resource (`profile`, `resume`, `saved_job`, `file`, `subscription`) must enforce strict user-id ownership checks.
+MongoDB must be reachable at `MONGO_URL`. Interactive API docs are at `/api/docs` when `APP_ENV` is not `production`.
 
----
+## Not implemented yet
 
-## 2. Technology Stack
-
-- **Framework**: FastAPI (Python 3.11+)
-- **Database**: PostgreSQL 15+ / Supabase
-- **ORM / Query**: SQLAlchemy 2.0 (async) + Alembic for migrations
-- **Validation**: Pydantic v2
-- **Authentication**: JWT / Supabase Auth with Bearer token header (`Authorization: Bearer <token>`)
-- **Storage**: S3-compatible object storage (Supabase Storage / AWS S3)
-- **AI Integration**: OpenAI (GPT-4o / GPT-4o-mini) / Anthropic (Claude 3.5 Sonnet) via provider-agnostic `AIService`
-- **File Processing**: `pdfplumber` / `pypdf` for PDF text extraction, `python-docx` for DOCX
-
----
-
-## 3. Documentation Index
-
-The handoff documentation is divided into 12 comprehensive modules:
-
-| # | Document | Description |
-|---|---|---|
-| ⭐ | **[API Documentation](./API_DOCUMENTATION.md)** | **Complete Frontend ➔ Backend REST contract (Requests, Responses, Errors, Loading States)** |
-| 01 | [Database Schema](./01-DATABASE-SCHEMA.md) | Full PostgreSQL/Supabase DDL, tables, constraints, foreign keys, indexes, and RLS policies |
-| 02 | [API Endpoints](./02-API-ENDPOINTS.md) | Complete REST API specification (Auth, Profile, Resumes, Jobs, ATS, Subscriptions, Files) |
-| 03 | [Pydantic Schemas](./03-PYDANTIC-SCHEMAS.md) | Production Pydantic v2 schemas mirroring the frontend TypeScript interfaces |
-| 04 | [Authentication & Security](./04-AUTHENTICATION-SECURITY.md) | Supabase/JWT auth flow, user context dependency, ownership guards, rate limits, CORS |
-| 05 | [AI Service Architecture](./05-AI-SERVICE-ARCHITECTURE.md) | `AIService` interface, system prompts, anti-fabrication guards, structured JSON output schemas |
-| 06 | [File Upload Pipeline](./06-FILE-UPLOAD-PIPELINE.md) | PDF/DOCX validation, 10MB limits, storage, text extraction, and resume parsing pipeline |
-| 07 | [Subscription & Usage](./07-SUBSCRIPTION-USAGE.md) | Plan models (Free, Single ₹49, Monthly ₹199), server-side quota tracking, access guards |
-| 08 | [Project Structure](./08-PROJECT-STRUCTURE.md) | Standard FastAPI production codebase structure, modular service layers, dependency injection |
-| 09 | [Environment Variables](./09-ENV-VARIABLES.md) | Environment configuration reference and complete `.env.example` |
-| 10 | [Test Plan](./10-TEST-PLAN.md) | Pytest test suite, ownership isolation tests, boundary tests, mock AI fixtures |
-| 11 | [Seed & Mock Data](./11-SEED-MOCK-DATA.md) | Seed data scripts for resume templates, sample jobs, and development fixtures |
-| 12 | [Deployment Guide](./12-DEPLOYMENT-GUIDE.md) | Dockerfile, docker-compose, Alembic migrations, Supabase deployment, and health checks |
-
----
-
-## 4. Standard API Conventions
-
-### Response Envelope
-All successful JSON responses return standard envelopes:
-```json
-{
-  "data": { ... },
-  "message": "Resource created successfully"
-}
-```
-
-### Error Envelope
-All error responses conform to:
-```json
-{
-  "error": {
-    "code": "RESOURCE_NOT_FOUND",
-    "message": "Resume with id 'res_123' does not exist or you do not have permission to access it."
-  }
-}
-```
-
-### HTTP Status Code Standards
-- `200 OK`: Successful read or update operation.
-- `201 Created`: Successful resource creation.
-- `204 No Content`: Successful deletion.
-- `400 Bad Request`: Invalid payload or business logic constraint violation.
-- `401 Unauthorized`: Missing or invalid bearer token.
-- `403 Forbidden`: Authenticated user does not own the requested resource.
-- `404 Not Found`: Resource does not exist.
-- `409 Conflict`: Duplicate entry or concurrent modification conflict.
-- `422 Unprocessable Entity`: Request body failed Pydantic validation.
-- `429 Too Many Requests`: Rate limit or subscription plan quota exceeded.
-- `500 Internal Server Error`: Unhandled server or provider exception (sanitized in production).
+- Payments checkout UI in the frontend (the backend order/verify endpoints exist).
+- Razorpay webhook handling (payments are only confirmed through `POST /api/payments/verify`).

@@ -15,7 +15,7 @@ export function TemplateCategories({ value, onChange }: { value: CategoryFilter;
           onClick={() => onChange(category)}
           className={cn(
             'shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-            value === category ? 'bg-brand text-white shadow-xs' : 'border border-border bg-surface text-text hover:border-primary/30',
+            value === category ? 'bg-brand text-on-primary shadow-xs' : 'border border-border bg-surface text-text hover:border-primary/30',
           )}
         >
           {category}

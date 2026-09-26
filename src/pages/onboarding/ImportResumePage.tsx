@@ -8,6 +8,7 @@ import { ProfileSections } from '@/components/onboarding/ProfileSections'
 import { Button } from '@/components/ui/Button'
 import { linkStyles } from '@/components/ui/linkStyles'
 import { paths } from '@/routes/navigation'
+import { ApiError } from '@/services/apiClient'
 import { RESUME_ACCEPT, extractResume, validateResumeFile } from '@/services/import.service'
 import { useAuthStore } from '@/store/authStore'
 import { useOnboardingStore } from '@/store/onboardingStore'
@@ -54,9 +55,9 @@ export function ImportResumePage() {
       if (!mounted.current) return
       setDraft(data, 'resume')
       setPhase('done')
-    } catch {
+    } catch (error) {
       if (!mounted.current) return
-      setError('We couldn’t read that file. Try again, or build your profile manually.')
+      setError(error instanceof ApiError && error.status < 500 ? error.message : 'We couldn’t read that file. Try again, or build your profile manually.')
       setPhase('idle')
     }
   }

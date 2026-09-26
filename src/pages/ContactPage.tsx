@@ -6,6 +6,7 @@ import { LandingContainer } from '@/components/landing/LandingContainer'
 import { LandingFooter } from '@/components/landing/LandingFooter'
 import { paths } from '@/routes/navigation'
 import { ScrollReveal } from '@/components/transitions/ScrollReveal'
+import { ApiError, apiClient } from '@/services/apiClient'
 
 const TOPIC_OPTIONS = [
   'General question',
@@ -26,6 +27,8 @@ export function ContactPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  // Hidden from people; bots that fill every field get silently ignored by the API.
+  const [honeypot, setHoneypot] = useState('')
 
   const validate = () => {
     const errs: Record<string, string> = {}
@@ -44,15 +47,18 @@ export function ContactPage() {
     return Object.keys(errs).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
-
     setSubmitting(true)
-    setTimeout(() => {
-      setSubmitting(false)
+    try {
+      await apiClient.post('/contact', { name: name.trim(), email: email.trim(), topic, message: message.trim(), website: honeypot })
       setSubmitted(true)
-    }, 600)
+    } catch (error) {
+      setErrors({ form: error instanceof ApiError ? error.message : 'We couldn’t send your message. Please try again, or email us directly.' })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleReset = () => {
@@ -279,6 +285,19 @@ export function ContactPage() {
                         />
                         {errors.message && <p className="mt-1 text-xs text-rose-400">{errors.message}</p>}
                       </div>
+
+                      <div aria-hidden className="absolute -left-[10000px] h-px w-px overflow-hidden">
+                        <label>
+                          Website
+                          <input type="text" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
+                        </label>
+                      </div>
+
+                      {errors.form && (
+                        <p role="alert" className="rounded-control border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-300">
+                          {errors.form}
+                        </p>
+                      )}
 
                       {/* Primary submit button */}
                       <button

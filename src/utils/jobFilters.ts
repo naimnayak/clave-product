@@ -13,7 +13,9 @@ export const ALL = 'all'
 
 export const defaultFilters: JobFilterValues = { role: ALL, location: '', experience: ALL, workType: ALL, posted: ALL, minMatch: ALL }
 
-export const roleOptions = ['Product Design', 'UX/UI Design', 'Frontend Engineering']
+/** Role families present in the current listings, alphabetical ("Other" last). */
+export const roleOptionsFor = (jobs: Job[]): string[] =>
+  [...new Set(jobs.map((job) => job.roleType).filter(Boolean))].sort((a, b) => (a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b)))
 export const experienceOptions: Array<[string, string]> = [
   ['internship', 'Internship'],
   ['entry', 'Entry level (0–2 yrs)'],

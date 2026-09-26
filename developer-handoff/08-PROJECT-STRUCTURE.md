@@ -1,157 +1,94 @@
-# 08 — Suggested FastAPI Project Structure
+# 08 · Project Structure
 
-This document outlines the recommended production layout for the Clave FastAPI backend.
-
----
-
-## 1. Directory Tree
-
-```text
-clave-backend/
-├── app/
-│   ├── __init__.py
-│   ├── main.py                     # FastAPI application factory & lifespan
-│   │
-│   ├── core/                       # Core configuration & infrastructure
-│   │   ├── __init__.py
-│   │   ├── config.py               # pydantic-settings configuration
-│   │   ├── database.py             # Async SQLAlchemy engine & session factory
-│   │   ├── security.py             # Password hashing, JWT encode/decode
-│   │   ├── exceptions.py           # Custom exception classes & handlers
-│   │   └── logging.py              # Structured logging configuration
-│   │
-│   ├── models/                     # SQLAlchemy relational ORM models
-│   │   ├── __init__.py
-│   │   ├── user.py
-│   │   ├── profile.py              # CareerProfile, Education, Experience, etc.
-│   │   ├── resume.py               # Resume, ResumeVersion, ResumeTemplate
-│   │   ├── job.py                  # Job, SavedJob
-│   │   ├── analysis.py             # JobAnalysis, AtsAnalysis
-│   │   ├── file.py                 # UploadedFile
-│   │   └── subscription.py         # Subscription, UsageRecord
-│   │
-│   ├── schemas/                    # Pydantic v2 validation & response models
-│   │   ├── __init__.py
-│   │   ├── base.py                 # ApiResponse, ApiErrorResponse
-│   │   ├── auth.py
-│   │   ├── user.py
-│   │   ├── profile.py
-│   │   ├── resume.py
-│   │   ├── job.py
-│   │   ├── ai.py
-│   │   ├── file.py
-│   │   └── subscription.py
-│   │
-│   ├── api/                        # HTTP route controllers (FastAPI routers)
-│   │   ├── __init__.py
-│   │   ├── deps.py                 # Common dependencies (get_db, get_current_user)
-│   │   └── v1/
-│   │       ├── __init__.py
-│   │       ├── router.py           # Aggregates all v1 sub-routers
-│   │       ├── auth.py
-│   │       ├── me.py
-│   │       ├── profile.py
-│   │       ├── resumes.py
-│   │       ├── jobs.py
-│   │       ├── files.py
-│   │       └── subscriptions.py
-│   │
-│   ├── services/                   # Core business logic layer
-│   │   ├── __init__.py
-│   │   ├── profile_service.py
-│   │   ├── resume_service.py
-│   │   ├── ats_service.py
-│   │   ├── job_service.py
-│   │   ├── file_service.py
-│   │   └── subscription_service.py
-│   │
-│   └── integrations/               # External 3rd-party clients
-│       ├── __init__.py
-│       ├── ai/                     # AIService implementation (OpenAI / Anthropic)
-│       │   ├── base.py
-│       │   ├── openai_provider.py
-│       │   └── prompts.py
-│       ├── storage/                # S3 / Supabase object storage client
-│       │   ├── base.py
-│       │   └── s3_client.py
-│       └── payments/               # Payment gateways (Razorpay / Stripe)
-│           ├── base.py
-│           └── razorpay_client.py
-│
-├── alembic/                        # Database migration scripts
-│   ├── versions/
-│   └── env.py
-├── tests/                          # Automated Pytest suite
-│   ├── conftest.py
-│   ├── test_auth.py
-│   ├── test_profile.py
-│   ├── test_resumes.py
-│   ├── test_ownership.py
-│   └── test_subscriptions.py
-├── scripts/
-│   ├── seed_data.py                # Database seeding script
-│   └── run_dev.sh
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── alembic.ini
-└── pyproject.toml
+```
+clave-product/
+├── index.html, vite.config.ts        # Vite; alias @ → src; dev proxy /api → http://localhost:8000
+├── package.json                      # dev, build (tsc -b && vite build), lint (oxlint), preview
+├── tsconfig*.json, .oxlintrc.json
+├── .env.example                      # frontend VITE_* variables (copy to .env.local)
+├── public/                           # static assets (favicon)
+├── src/                              # React frontend
+├── backend/                          # FastAPI backend
+├── developer-handoff/                # these docs
+└── .github/workflows/ci.yml          # CI: lint + build, pytest with MongoDB
 ```
 
----
+## Frontend (`src/`)
 
-## 2. FastAPI Application Factory (`app/main.py`)
+```
+src/
+├── main.tsx, App.tsx, index.css, vite-env.d.ts
+├── routes/        AppRoutes.tsx, guards.tsx, navigation.ts
+├── layouts/       AppLayout, AuthLayout, MarketingLayout, OnboardingLayout, Navbar, Sidebar, …
+├── pages/         Dashboard, ProfilePage, ResumesPage, CreateResumePage, ResumeEditorPage, UploadResumePage,
+│                  JobsPage, JobDetailPage, AIAssistantPage, AIMockInterviewPage, AccountPage, SettingsPage,
+│                  PricingPage, Landing, About/HowItWorks/Guide/Contact, NotFound
+│                  auth/ (Login, Signup, ForgotPassword), onboarding/ (Welcome, ImportResume, ImportLinkedIn,
+│                  ManualSetup, Review), legal/ (Terms, Privacy, Cookie, Refund, AcceptableUse, AiDisclosure, Grievance)
+├── components/    account, assistant, auth, brand, builder, dashboard, effects, jobs, landing, layout, legal,
+│                  navigation, onboarding, profile, resumes, settings, transitions, ui, upgrade
+├── services/      apiClient.ts + one *.service.ts per API area (auth, profile, resume, resumeDocument,
+│                  resumeGeneration, resumeUpload, import, tailor, atsReview, jobAnalysis, job, applications,
+│                  ai, assistant, interview, career, notifications, settings, subscription)
+├── hooks/         useProfile, useResumes, useResumeEditor, useJobsView, useSavedJobs, useApplications, …
+├── store/         Zustand: authStore, onboardingStore, savedJobsStore, applicationsStore, upgradeModalStore, …
+├── lib/           firebase.ts (Firebase web SDK init)
+├── types/         TypeScript contracts mirrored by backend/app/schemas
+├── utils/         ATS heuristics, resume templates/printing, job filters, formatting helpers
+├── mocks/         template previews and sample job descriptions (UI content, not API data)
+├── assets/, styles/theme.css
+```
 
-```python
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
-from app.core.database import engine
-from app.api.v1.router import api_v1_router
-from app.core.exceptions import ClaveException
+## Backend (`backend/`)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Verify DB connection
-    async with engine.begin() as conn:
-        pass
-    yield
-    # Shutdown: Dispose DB connection pool
-    await engine.dispose()
-
-def create_app() -> FastAPI:
-    app = FastAPI(
-        title="Clave Career Workspace API",
-        version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
-        lifespan=lifespan
-    )
-
-    # CORS configuration
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # Global custom exception handler for standardized error response envelope
-    @app.exception_handler(ClaveException)
-    async def clave_exception_handler(request: Request, exc: ClaveException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"error": {"code": exc.code, "message": exc.message, "details": exc.details}}
-        )
-
-    # Mount v1 router
-    app.include_router(api_v1_router, prefix="/api")
-
-    return app
-
-app = create_app()
+```
+backend/
+├── requirements.txt          # pinned dependencies
+├── .env.example              # copy to .env (git-ignored)
+├── secrets/                  # service-account JSON files (git-ignored except .gitkeep)
+├── tests/                    # pytest suite (conftest.py, helpers.py, test_*.py)
+├── pytest.ini
+├── requirements-dev.txt      # requirements.txt + pytest
+└── app/
+    ├── main.py               # app factory, lifespan (Firebase init, Mongo ping + indexes, seed, warnings),
+    │                         # CORS, error handlers, /api router, /api/health, maintenance loop
+    ├── api/
+    │   ├── deps.py           # run_ai / ai_action (daily quota + refund), stored_profile
+    │   ├── account.py        # /auth/sync, /auth/logout, /me…, sessions, export, delete
+    │   ├── profile.py        # /profile
+    │   ├── resumes.py        # /resumes…, generate, analyze-job, tailor, ATS analyze
+    │   ├── files.py          # /files/upload, parse-resume, parse-profile
+    │   ├── ai.py             # /ai/usage, transform, chat, interview sessions
+    │   ├── jobs.py           # /jobs…, /jobs/search, /companies
+    │   ├── applications.py   # /applications
+    │   ├── notifications.py  # /notifications
+    │   ├── support.py        # /contact, /feedback
+    │   └── billing.py        # /subscriptions/*, /payments/*
+    ├── core/
+    │   ├── config.py         # Settings (pydantic-settings, reads backend/.env)
+    │   ├── security.py       # Firebase init, get_current_user, Firebase user helpers
+    │   ├── errors.py         # ApiError, error envelope, handlers, UnhandledErrorMiddleware
+    │   ├── limiter.py        # slowapi limiter
+    │   └── utils.py          # ok(), iso(), new_id(), utcnow()
+    ├── db/mongo.py           # AsyncMongoClient, collection accessors, ensure_indexes()
+    ├── schemas/              # common.py, profile.py, resume.py, settings.py
+    ├── services/
+    │   ├── ai_client.py      # AI SDK client, structured output, retries
+    │   ├── ai_tasks.py       # prompts + anti-fabrication guards for every AI feature
+    │   ├── accounts.py       # user documents, public_user, usage counters
+    │   ├── sessions.py       # device sessions / SESSION_REVOKED
+    │   ├── quota.py          # plans, entitlements, resume credits, daily AI allowance
+    │   ├── free_resume_guard.py
+    │   ├── resumes.py        # resume persistence, summary/document views
+    │   ├── resume_logic.py   # profile → resume mapping, patches, keyword helpers
+    │   ├── ats.py            # heuristic ATS score
+    │   ├── documents.py      # file type detection, PDF/DOCX text extraction
+    │   ├── storage.py        # bucket or MongoDB upload storage, cleanup
+    │   ├── apify_jobs.py     # live job search via Apify actors
+    │   ├── job_ingest.py     # job feed: fetch, AI structuring, expiry, match notifications
+    │   ├── job_matching.py   # per-user match percent, recommendations
+    │   ├── notifications.py  # in-app notifications + email copies
+    │   └── email.py          # SMTP sender
+    ├── cli/ingest_jobs.py    # one ingestion pass for cron
+    └── seed/                 # __init__.py (seed_demo_jobs), jobs_seed.json
 ```

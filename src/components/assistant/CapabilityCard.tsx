@@ -5,11 +5,13 @@ interface CapabilityCardProps {
   icon: LucideIcon
   title: string
   description: string
-  /** Examples of what you will be able to ask. Illustrative only. */
+  /** Example questions. When `onPick` is set they become buttons that ask the assistant. */
   prompts: string[]
+  onPick?: (prompt: string) => void
+  disabled?: boolean
 }
 
-export function CapabilityCard({ icon: Icon, title, description, prompts }: CapabilityCardProps) {
+export function CapabilityCard({ icon: Icon, title, description, prompts, onPick, disabled }: CapabilityCardProps) {
   return (
     <article className="flex h-full flex-col rounded-default border border-border bg-surface p-4 shadow-xs">
       <div className="flex items-start gap-3.5">
@@ -25,7 +27,20 @@ export function CapabilityCard({ icon: Icon, title, description, prompts }: Capa
         <Quote className="mt-0.5 size-4 shrink-0 text-primary/40" aria-hidden />
         <ul className="flex flex-col gap-1.5 text-[11px] text-secondary" aria-label="Example prompts">
           {prompts.map((prompt) => (
-            <li key={prompt}>“{prompt}”</li>
+            <li key={prompt}>
+              {onPick ? (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onPick(prompt)}
+                  className="text-left transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  “{prompt}”
+                </button>
+              ) : (
+                <>“{prompt}”</>
+              )}
+            </li>
           ))}
         </ul>
       </div>

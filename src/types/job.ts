@@ -16,6 +16,10 @@ export interface Job {
   postedDaysAgo: number
   /** Shown when the listing includes it. */
   salary?: string
+  /** Set by the API for the best matches ("Recommended for You"). */
+  recommended?: boolean
+  /** Company application link, when the listing has one. */
+  applyUrl?: string
 }
 
 /** The long-form part of a listing, loaded only on the detail page. */

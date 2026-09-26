@@ -1,3 +1,4 @@
+import { useApplications } from '@/hooks/useApplications'
 import { useAsyncData } from '@/hooks/useAsyncData'
 import { MATCHED_THRESHOLD, useJobsView } from '@/hooks/useJobsView'
 import type { JobsView } from '@/hooks/useJobsView'
@@ -21,13 +22,16 @@ export function JobsViewTabs({ className }: { className?: string }) {
   const [view, setView] = useJobsView()
   const jobs = useAsyncData(getJobs)
   const { saved } = useSavedJobs()
+  const { applications } = useApplications()
   const all = jobs.status === 'success' ? jobs.data : []
+  const tracked = Object.values(applications)
+  const byStatus = (status: string) => tracked.filter((app) => app.status === status).length
   const counts: Partial<Record<JobsView, number>> = {
     saved: all.filter((job) => job.id in saved).length,
     matched: all.filter((job) => job.matchPercent >= MATCHED_THRESHOLD).length,
-    applied: 0,
-    interviewing: 0,
-    rejected: 0,
+    applied: byStatus('applied'),
+    interviewing: byStatus('interviewing'),
+    rejected: byStatus('rejected'),
   }
 
   return (

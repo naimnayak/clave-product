@@ -14,7 +14,7 @@ export function AccountPage() {
       <div className="flex w-full flex-col gap-6">
         <h1 className="sr-only">Account</h1>
 
-        <ProfileInformation emailVerified={account.settings.emailVerified} onEmailVerified={(emailVerified) => account.update({ emailVerified })} />
+        <ProfileInformation emailVerified={account.settings.emailVerified} />
         <SecuritySection {...account} />
         <SubscriptionSection />
         <DangerZone />

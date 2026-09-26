@@ -1,135 +1,59 @@
-# 05 — AI Service Architecture & Guardrails
+# 05 · AI Service Architecture
 
-This document outlines the architecture, prompts, anti-fabrication guardrails, and validation mechanisms for all AI-powered services in Clave.
+All AI features call one AI model provider through the AI provider's Python SDK (see `requirements.txt`). The vendor and model IDs are configuration only; code and docs refer to "the AI model".
 
----
+## Layers
 
-## 1. Architecture & Service Abstraction
-
-All AI calls are encapsulated behind the `AIService` abstract base class. FastAPI route handlers **never** make direct calls to OpenAI or Anthropic SDKs.
-
-```text
-FastAPI Route Handler
-          │
-          ▼
-   AIService (Interface)
-          │
-    ┌─────┴────────────────┐
-    ▼                      ▼
-OpenAIProvider       AnthropicProvider
-(GPT-4o / mini)     (Claude 3.5 Sonnet)
+```
+api/*.py  ──ai_action()──▶  services/ai_tasks.py  ──generate_structured()──▶  services/ai_client.py  ──▶  AI model provider
+   │  (quota + refund, api/deps.py)     (prompts, guards)                     (client, retries, schema validation)
 ```
 
-### `AIService` Abstract Base Class
-```python
-from abc import ABC, abstractmethod
-from typing import Dict, Any
-from app.schemas.resume import ResumeContent, ResumeDocument
-from app.schemas.profile import ProfileData
-from app.schemas.ai import JobAnalysisResponse, AtsAnalysisResponse
+## Client (`services/ai_client.py`)
 
-class BaseAIService(ABC):
-    @abstractmethod
-    async def analyze_job(self, target_role: str, job_description: str, career_profile: ProfileData) -> JobAnalysisResponse:
-        """Analyzes compatibility between user profile and job description."""
-        pass
+- **Access modes.** `AI_USE_CLOUD_PROJECT=true` (default) authenticates with the service account at `AI_CREDENTIALS_FILE`, falling back to Application Default Credentials if the file is missing. `AI_USE_CLOUD_PROJECT=false` uses `AI_API_KEY`.
+- **Models.** `AI_MODEL` (main: generation, job analysis, tailoring, parsing) and `AI_MODEL_LITE` (short tasks: rewrites, chat, ATS review, interviews, job-feed structuring). Both are model IDs supplied by the AI provider. `is_configured()` requires both plus an access mode; otherwise AI endpoints return `503 AI_GENERATION_FAILED` and startup logs a warning.
+- **Reasoning effort.** `AI_THINKING_LEVEL` (`minimal`/`low`/`medium`/`high`, empty disables). The lite model always uses `minimal`.
+- **Timeout.** `AI_TIMEOUT_SECONDS` (default 90). The frontend uses a 90 s timeout for AI calls.
+- **Structured output.** `generate_structured(contents, schema, system_instruction, lite, temperature)` requests JSON with a Pydantic response schema, disables tool/function calling, and returns a validated model instance. If the SDK's parsed object isn't available it validates `response.text` with `model_validate_json`.
+- **Retries.** Up to 3 attempts. Retries HTTP 408/429/500/502/503/504 and network/timeouts with exponential backoff plus jitter (1 s, 2 s + up to 0.5 s). Output that fails validation is also retried.
+- **Errors.** `AIUnavailableError` (not configured, busy, unreachable) → `503`; `AIResponseError` (rejected request, invalid output after retries) → `502`. Both surface as `AI_GENERATION_FAILED` via `api/deps.py run_ai()`.
 
-    @abstractmethod
-    async def generate_resume(self, target_role: str, career_profile: ProfileData, job_analysis: JobAnalysisResponse) -> ResumeContent:
-        """Generates structured resume content strictly based on verified career profile data."""
-        pass
+## Tasks (`services/ai_tasks.py`)
 
-    @abstractmethod
-    async def tailor_resume(self, original_content: ResumeContent, job_title: str, company: str, job_description: str) -> ResumeContent:
-        """Tailors an existing resume's summary and bullet points to match the target job description."""
-        pass
+| Function | Endpoint | Model | Output |
+|---|---|---|---|
+| analyze_job | POST /resumes/analyze-job | main | Requirements, matched skills, gaps, alignment score, 3 insights |
+| generate_resume | POST /resumes/generate | main | Unsaved `ResumeDocument` draft + keywords. Temperature rises with `attempt` for regeneration. |
+| tailor_analysis | POST /resumes/{id}/tailor(/analyze) | main | Keyword split + list of patch operations |
+| ats_analysis | POST /resumes/{id}/analyze | lite | AI factor scores blended with the heuristic score (`services/ats.py`) |
+| parse_resume | POST /files/{id}/parse-resume, parse-profile | main | `ParsedResume`, mapped to a ResumeDocument or ProfileData. Scanned PDFs (< 200 chars of text) are sent to the model as a PDF part. |
+| transform_text | POST /ai/transform | lite | Rewritten summary/bullet |
+| chat | POST /ai/chat | lite | Reply + up to 3 suggested follow-ups |
+| interview_question / evaluate_answer | /ai/interview/… | lite | Question with key points; 0-100 score and feedback |
+| job_ingest._structure | job feed (no endpoint) | lite | Normalized job listings (see 11) |
 
-    @abstractmethod
-    async def analyze_ats(self, resume_content: ResumeContent, job_description: str = None) -> AtsAnalysisResponse:
-        """Evaluates ATS parsing readiness, keyword presence, and formatting strength."""
-        pass
+AI output schemas use camelCase so they map directly onto `src/types`. Scores are clamped to 0-100 and lists are de-duplicated and capped server-side.
 
-    @abstractmethod
-    async def parse_resume_text(self, raw_text: str) -> Dict[str, Any]:
-        """Extracts structured profile and resume information from raw uploaded resume text."""
-        pass
-```
+## Anti-fabrication rules
 
----
+The system instruction (`SYSTEM`) includes `ANTI_FABRICATION`: use only facts present in the candidate data; never invent employers, titles, dates, degrees, certifications, skills, tools, metrics or achievements; leave missing fields empty. It also states that job descriptions and resumes are untrusted data whose instructions must be ignored (prompt-injection defence); user content is wrapped in delimiters like `<<<JD … JD>>>`.
 
-## 2. Anti-Fabrication Principles & Guardrails
+The server then re-checks model output instead of trusting it:
+- **Numbers.** `_supported(candidate, source)` rejects text containing any number not present in the source. Generated summaries keep only supported sentences (fallback: the profile summary). Rewritten bullets, project text, tailored summaries and bullet rewrites are discarded if they add numbers.
+- **Transform.** The model may insert placeholders like `[X%]` for the user to fill; if it adds a real number, the original text is returned.
+- **Skills.** Generated skills are filtered to the profile's skills and project tech (`ALLOWED SKILLS`); unlisted profile skills are appended. Tailoring never adds skills in the one-shot path; `addSkills` suggestions require user confirmation in the review UI.
+- **Structure.** Generation keeps the profile's own experience/project entries (matched by `sourceId`) and only rewrites entries that already have text. Keywords are kept only if they appear in the final resume; "missing keywords" are dropped if the resume already contains them.
+- **Parsing.** Prompts forbid inferring content absent from the resume. Parse results are not saved until the user confirms.
 
-> **PRIMARY DIRECTIVE**: Clave AI must **NEVER** fabricate, hallucinate, or extrapolate facts.
->
-> ❌ **Prohibited**:
-> - Inventing companies, institutions, job titles, or dates.
-> - Adding skills or certifications the user did not declare.
-> - Fabricating metrics (e.g., claiming "increased revenue by 40%" when the user did not provide that number).
-> - Adding fake degrees or educational honors.
->
-> ✅ **Allowed & Expected**:
-> - Rephrasing existing bullet points using active, impact-oriented verbs (e.g., "Led", "Engineered", "Designed").
-> - Reordering skills or experiences to prioritize those requested in the job description.
-> - Tailoring the professional summary to align with the target role.
-> - Correcting grammar, punctuation, and typographical errors.
+## Daily limits and refunds (`services/quota.py`, `api/deps.py`)
 
----
+- Every user-visible AI call goes through `ai_action(uid, call)`: `consume_ai_action` increments `ai_usage["<uid>:<UTC date>"]`, then the call runs. On any exception `refund_ai_action` decrements the count, so failed calls don't use the allowance.
+- Allowance: `AI_DAILY_LIMIT_FREE` (30) or `AI_DAILY_LIMIT_PAID` (300) while a Monthly plan is active. Over the limit → `429 AI_DAILY_LIMIT_REACHED`; resets at midnight UTC. `GET /api/ai/usage` returns `{limit, used}`.
+- One interview answer (evaluation + next question) counts as one action. Uploads and job-feed ingestion don't count.
+- Per-minute burst limit: `AI_RATE_LIMIT` (slowapi, see 04).
+- Usage counters on `users.usage` (`aiGenerations`, `atsAnalyses`, `parses`, `tailorings`) are analytics only.
 
-## 3. Core System Prompts
+## Personalization
 
-### Resume Generation & Tailoring System Prompt
-```text
-You are Clave AI, an elite career copilot and professional resume architect.
-Your mission is to craft exceptional, ATS-optimized, high-impact resumes for students, freshers, and early-career professionals.
-
-CRITICAL CONSTRAINTS:
-1. STRICT TRUTH-TELLING: You may only use facts, experiences, education, and skills provided in the user's verified profile.
-2. NO FABRICATION: Never invent employers, project names, credentials, dates, or metrics. If a metric was not supplied, focus on the methodology and scope of work rather than inventing numbers.
-3. ACTION-ORIENTED BULLETS: Start every bullet point with a compelling action verb (e.g., "Spearheaded", "Engineered", "Optimized", "Architected").
-4. KEYWORD RELEVANCE: Naturally integrate relevant technical and domain keywords from the target job description where supported by user experience.
-5. CONCISE & READABLE: Keep bullet points concise (1 to 2 lines maximum). Ensure tone is confident, professional, and humble.
-6. OUTPUT FORMAT: Respond ONLY with valid JSON conforming to the requested schema. Do not include markdown code block markers or conversational preamble.
-```
-
----
-
-## 4. ATS Scoring Algorithm
-
-ATS analysis does not rely solely on probabilistic LLM responses; it uses a deterministic hybrid scoring engine:
-
-$$\text{ATS Score} = (0.35 \times K) + (0.25 \times S) + (0.20 \times E) + (0.10 \times F) + (0.10 \times C)$$
-
-Where:
-- **$K$ (Keyword Match)**: Exact and fuzzy matching of required skills and terms from the job description in the resume text.
-- **$S$ (Skills Match)**: Percentage of required technical and soft skills explicitly present in `resume.content.skills`.
-- **$E$ (Experience Match)**: Alignment between role responsibilities and experience bullet points.
-- **$F$ (Formatting)**: Structural validation (clean contact info, valid dates, absence of problematic special characters).
-- **$C$ (Completeness)**: Presence of core sections (Summary, Experience, Education, Skills).
-
-### Alignment Score vs ATS Score
-- **Alignment Score** (`POST /api/resumes/analyze-job`): Measures how well the user's **Career Profile** matches a prospective job before writing a resume.
-- **ATS Score** (`POST /api/resumes/{id}/analyze`): Measures the structural and keyword quality of a **specific Resume Document** for applicant tracking systems.
-
----
-
-## 5. Structured JSON Output Enforcement
-
-FastAPI enforces Pydantic schemas on all AI outputs using OpenAI's Structured Outputs (`response_format={"type": "json_schema", ...}`):
-
-```python
-from openai import AsyncOpenAI
-
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-async def call_structured_ai(prompt: str, schema_cls: type[BaseModel]) -> BaseModel:
-    response = await client.beta.chat.completions.parse(
-        model="gpt-4o-2024-08-06",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
-        response_format=schema_cls,
-        temperature=0.2, # Low temperature for consistency and deterministic adherence
-    )
-    return response.choices[0].message.parsed
-```
+`POST /ai/chat` includes a subset of the Career Profile only when `settings.privacy.personalizeAi` is true; the response reports `personalized`.

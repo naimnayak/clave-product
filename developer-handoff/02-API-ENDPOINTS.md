@@ -1,402 +1,167 @@
-# 02 — API Endpoints Reference
+# 02 · API Endpoints
 
-This document details all REST API endpoints required by the Clave frontend. All protected endpoints require a Bearer token in the `Authorization` header:
-```http
-Authorization: Bearer <access_token>
+Base path: `/api` (routers mounted in `app/main.py`). JSON bodies and responses use camelCase. OpenAPI UI: `/api/docs` (disabled when `APP_ENV=production`).
+
+## Conventions
+
+**Auth.** "User" means `Authorization: Bearer <Firebase ID token>` is required (`get_current_user`). The web app also sends `X-Clave-Session: <random id>` so device sessions can be listed and revoked (see 04). "Public" endpoints need no token.
+
+**Success envelope** (`core/utils.py` `ok()`):
+```json
+{ "data": <payload>, "message": "optional human message" }
 ```
+`204` responses have no body. `GET /me/export` returns a raw JSON file.
 
----
+**Error envelope** (`core/errors.py`):
+```json
+{ "error": { "code": "PLAN_LIMIT_REACHED", "message": "…", "details": null, "...extra": "…" } }
+```
+Validation errors put `[{ "field", "message" }]` in `details`. Unexpected exceptions return a sanitized `500 INTERNAL_ERROR`.
 
-## 1. Authentication & Session
+**Markers.** `[AI]` = counts as one daily AI action (refunded if the AI call fails) and is rate limited per user by `AI_RATE_LIMIT` (default `30/minute`). `[Credit]` = consumes a resume credit (see 07).
 
-| Method | Endpoint | Description | Auth Required |
+## Error codes
+
+| Status | Code | When |
+|---|---|---|
+| 400 | BAD_REQUEST | Generic bad request (for example revoking the current session) |
+| 400 | FILE_TOO_LARGE / EMPTY_FILE / UNSUPPORTED_FILE_TYPE / UNREADABLE_FILE | Upload problems (see 06) |
+| 400 | PAYMENT_VERIFICATION_FAILED | Razorpay signature mismatch |
+| 401 | UNAUTHENTICATED | Missing or invalid ID token |
+| 401 | TOKEN_EXPIRED | Expired ID token (the client refreshes once and retries) |
+| 401 | SESSION_REVOKED | This browser's session was signed out from another device |
+| 402 | PLAN_LIMIT_REACHED | No resume allowance left. Error object also carries `plans` (single, monthly) |
+| 404 | RESOURCE_NOT_FOUND | Missing, or owned by another user |
+| 405 | METHOD_NOT_ALLOWED | |
+| 409 | CONFLICT | Upload already saved, interview already complete, payment already used |
+| 422 | VALIDATION_ERROR | Body/query validation failed |
+| 429 | RATE_LIMIT_EXCEEDED | slowapi burst limit hit |
+| 429 | AI_DAILY_LIMIT_REACHED | Daily AI allowance used up (resets at midnight UTC) |
+| 500 | INTERNAL_ERROR | Unhandled error |
+| 502 | AI_GENERATION_FAILED | AI returned unusable output or rejected the request |
+| 502 | PAYMENT_GATEWAY_ERROR / UPSTREAM_ERROR | Razorpay or Apify failed |
+| 503 | AI_GENERATION_FAILED | AI not configured, busy or unreachable |
+| 503 | PAYMENTS_NOT_CONFIGURED | Razorpay keys not set |
+| 503 | SERVICE_UNAVAILABLE | Firebase keys unreachable, live job search not configured |
+
+## System
+
+| Method | Path | Auth | Response `data` |
 |---|---|---|---|
-| `POST` | `/api/auth/register` | Register new user with email & password | No |
-| `POST` | `/api/auth/login` | Authenticate with credentials and return tokens | No |
-| `POST` | `/api/auth/refresh` | Refresh access token using refresh token | No |
-| `POST` | `/api/auth/forgot-password`| Send password reset instructions | No |
-| `POST` | `/api/auth/reset-password` | Set new password with token | No |
-| `POST` | `/api/auth/logout` | Revoke session and refresh token | Yes |
+| GET | /health | Public | `{status: "ok"\|"degraded", database: "ok"\|"unavailable", ai: "configured"\|"off"}` |
 
----
+## Account (`api/account.py`)
 
-## 2. User & Account Management
+| Method | Path | Auth | Request | Response `data` / notes |
+|---|---|---|---|---|
+| POST | /auth/sync | User | `{name?}` (optional body) | `{user, onboardingComplete, isNewUser}`. Call after every Firebase sign-in/sign-up. Creates the user on first call. |
+| POST | /auth/logout | User | none | `{loggedOut: true}`; revokes the current session |
+| GET | /me | User | | `PublicUser` `{id, name, email, avatarUrl, emailVerified, provider, onboardingComplete, isActive, createdAt, updatedAt}` |
+| PUT | /me | User | `{name?, avatarUrl?}` | `PublicUser`. Avatar must be an image data URL (png/jpeg/webp/gif, ≤ 400k chars) or `https://` URL; `null`/`""` clears it. |
+| POST | /me/onboarding | User | | `{onboardingComplete: true}` |
+| GET | /me/settings | User | | `UserSettings` |
+| PUT | /me/settings | User | `UserSettings` | `UserSettings` |
+| GET | /me/security | User | | `{providers[], passwordUpdatedAt, emailVerified, sessions[{id, device, lastActive, createdAt, current}]}` |
+| POST | /me/security/password-changed | User | | `{notified: true}`. Records a security notification; the password itself changes in Firebase. |
+| DELETE | /me/sessions/{sessionId} | User | | 204. `400 BAD_REQUEST` for the current session. |
+| POST | /me/sessions/revoke-others | User | | `{revoked: n}` |
+| GET | /me/export | User | | JSON file download (`Content-Disposition: attachment`) with account, profile, resumes, jobs, applications, interviews, notifications, uploads metadata, payments, feedback, sessions |
+| DELETE | /me | User | | 204. Deletes all user data (payments kept) and the Firebase user |
 
-### `GET /api/me`
-Returns account information for the authenticated user.
-- **Response `200`**:
-```json
-{
-  "data": {
-    "id": "c1f7a012-789a-4bc3-a412-98e3b1c201e5",
-    "email": "alex.chen@university.edu",
-    "name": "Alex Chen",
-    "avatar": "https://clave.app/avatars/alex.jpg",
-    "isActive": true,
-    "createdAt": "2026-01-15T08:30:00Z",
-    "updatedAt": "2026-03-01T10:15:00Z"
-  }
-}
-```
+## Career Profile (`api/profile.py`)
 
-### `PUT /api/me`
-Updates account settings (name, avatar). Does **not** modify career data.
-- **Request Body**:
-```json
-{
-  "name": "Alex Chen",
-  "avatar": "https://clave.app/avatars/new-avatar.jpg"
-}
-```
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| GET | /profile | User | | `ProfileData` or `null` |
+| PUT | /profile | User | `ProfileData` | `ProfileData` (missing entry ids are generated) |
 
-### `DELETE /api/me`
-Permanently deletes account and cascades to all user-owned data.
+## Resumes (`api/resumes.py`)
 
----
+| Method | Path | Auth | Request | Response `data` / notes |
+|---|---|---|---|---|
+| GET | /resumes | User | | `ResumeSummary[]` sorted by `updatedAt` desc |
+| POST | /resumes | User | `ResumeCreate` | `ResumeDocument` (201). `[Credit]` unless `sourceType="upload"`, which needs `sourceFileId` and is free once per upload (409 if reused). |
+| POST | /resumes/analyze-job | User | `{targetRole, jobDescription?, careerProfile?}` | `[AI]` `{role, company, location, workType, experience, alignmentScore, keyRequirements[], matchedSkills[], gaps[], insights[{type, title, body}]}`. Stored profile wins over `careerProfile`. |
+| POST | /resumes/generate | User | `{targetRole, industry?, jobDescription?, attempt (0-20), template?, jobAnalysis?{keyRequirements, matchedSkills, gaps}}` | `[AI]` `{doc: ResumeDocument (unsaved draft), keywords[], usedJobDescription}`. Pre-checks allowance (402) but does not consume a credit; saving via `POST /resumes` does. |
+| GET | /resumes/{id} | User | | `ResumeDocument` |
+| PUT | /resumes/{id} | User | `ResumeDocumentIn` | `ResumeSummary`; ATS score recomputed |
+| PATCH | /resumes/{id} | User | `ResumePatch` `{name?, targetRole?, template?, status?}` | `ResumeSummary`. `status: "ready"` clears the draft flag. |
+| DELETE | /resumes/{id} | User | | 204 |
+| POST | /resumes/{id}/duplicate | User | | `ResumeDocument` (201). `[Credit]` |
+| POST | /resumes/{id}/tailor/analyze | User | `{jobTitle?, company?, jobDescription}` | `[AI]` `{jobTitle, company, keywords{matched, missing, all}, changes[{id, title, description, patch}]}`. Nothing saved. |
+| POST | /resumes/{id}/tailor | User | same | `[AI]` `[Credit]` new tailored `ResumeDocument` + `analysis` (201). Applies all changes except `addSkills`. |
+| POST | /resumes/{id}/analyze | User | `{jobDescription?}` | `[AI]` `{score, summary, factors{keywordMatch, skillsMatch, experienceMatch, formatting, sectionCompleteness}, missingKeywords[], suggestions[], heuristic}`. Saved as `lastAtsAnalysis`. |
 
-## 3. Career Profile (Source of Truth)
+Patch ops returned by tailoring: `setTargetRole`, `setSummary`, `addSkills`, `moveProjectToTop`, `replaceBullet`.
 
-### `GET /api/profile`
-Fetches the full, canonical career profile for the authenticated user.
-- **Response `200`**:
-```json
-{
-  "data": {
-    "name": "Alex Chen",
-    "email": "alex.chen@university.edu",
-    "phone": "+1 (555) 234-5678",
-    "location": "San Francisco, CA",
-    "summary": "Full-stack developer with 2+ years building React/Node applications and a passion for AI tools.",
-    "targetRoles": ["Software Engineer", "Full Stack Developer"],
-    "experienceLevel": "early",
-    "experience": [
-      {
-        "id": "exp_1",
-        "role": "Frontend Developer Intern",
-        "company": "TechStart Inc",
-        "location": "San Francisco, CA",
-        "period": "Jun 2025 - Present",
-        "summary": "Built dashboard widgets using React, TypeScript, and Tailwind."
-      }
-    ],
-    "education": [
-      {
-        "id": "edu_1",
-        "institution": "University of California, Berkeley",
-        "degree": "B.S. in Computer Science",
-        "period": "2022 - 2026",
-        "details": "GPA: 3.8 / 4.0. Relevant coursework: Data Structures, AI, Database Systems."
-      }
-    ],
-    "projects": [
-      {
-        "id": "proj_1",
-        "name": "CareerCopilot",
-        "description": "AI resume analysis tool utilizing OpenAI embeddings.",
-        "technologies": ["React", "FastAPI", "PostgreSQL", "OpenAI"],
-        "link": "https://github.com/alexchen/career-copilot"
-      }
-    ],
-    "skills": ["TypeScript", "React", "Python", "FastAPI", "PostgreSQL", "Git", "Tailwind CSS"],
-    "certifications": [
-      {
-        "id": "cert_1",
-        "name": "AWS Certified Cloud Practitioner",
-        "issuer": "Amazon Web Services",
-        "year": "2025"
-      }
-    ],
-    "achievements": [
-      "Winner, CalHacks 2025 (Best AI Integration)",
-      "Dean's Honor List (Fall 2023, Spring 2024)"
-    ],
-    "links": [
-      { "id": "lnk_1", "label": "GitHub", "url": "https://github.com/alexchen" },
-      { "id": "lnk_2", "label": "LinkedIn", "url": "https://linkedin.com/in/alexchen" }
-    ],
-    "workModes": ["remote", "hybrid"],
-    "preferredLocations": "San Francisco, CA; New York, NY",
-    "industries": ["Technology", "Artificial Intelligence", "SaaS"]
-  }
-}
-```
+## Files (`api/files.py`)
 
-### `PUT /api/profile`
-Updates profile overview fields (target roles, summary, work modes, etc.).
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| POST | /files/upload | User | multipart `file` (PDF/DOCX, ≤ 10 MB) | `{fileId, fileName, fileSize, fileType, status: "ready"}` (201). Not an AI action. |
+| POST | /files/{fileId}/parse-resume | User | | `[AI]` `{fileId, targetRole, name, document: ResumeDocument, atsScore}`. Nothing saved. |
+| POST | /files/{fileId}/parse-profile | User | | `[AI]` `ProfileData` draft. Does not overwrite the saved profile. |
+| DELETE | /files/{fileId} | User | | 204 |
 
-### Section-Level CRUD Endpoints
+## AI (`api/ai.py`, prefix `/ai`)
 
-#### Education
-- `GET /api/profile/education`
-- `POST /api/profile/education`
-- `PUT /api/profile/education/{id}`
-- `DELETE /api/profile/education/{id}`
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| GET | /ai/usage | User | | `{limit, used}` for today (UTC) |
+| POST | /ai/transform | User | `{text, action: improve\|rewrite\|concise\|impact, context{role, skills[], kind?: "summary"}}` | `[AI]` `{text}` |
+| POST | /ai/chat | User | `{message, context?, history[≤20]{role: user\|assistant, content}}` | `[AI]` `{reply, suggestedActions[], personalized}`. Uses the profile only when `settings.privacy.personalizeAi` is on. |
+| GET | /ai/interview/sessions | User | query `limit` 1-50 (10) | Session summaries (no questions/answers) |
+| POST | /ai/interview/sessions | User | `{role, level="mid", focusSkills[], totalQuestions 1-15 (5)}` | `[AI]` Session (201) with the first question |
+| POST | /ai/interview/sessions/{id}/answers | User | `{answer}` | `[AI]` Session + `evaluation{score, summary, whatWorked[], improvementPoints[]}`. Evaluation + next question = one action. 409 when complete. |
+| GET | /ai/interview/sessions/{id} | User | | Session |
+| DELETE | /ai/interview/sessions/{id} | User | | 204 |
 
-#### Experience
-- `GET /api/profile/experience`
-- `POST /api/profile/experience`
-- `PUT /api/profile/experience/{id}`
-- `DELETE /api/profile/experience/{id}`
+Session shape: `{sessionId, role, level, focusSkills, totalQuestions, questionIndex, answeredCount, completed, overallScore, createdAt, updatedAt, questions[{question, category, difficulty, expectedKeyPoints}], answers[]}`.
 
-#### Projects
-- `GET /api/profile/projects`
-- `POST /api/profile/projects`
-- `PUT /api/profile/projects/{id}`
-- `DELETE /api/profile/projects/{id}`
+## Jobs (`api/jobs.py`)
 
-#### Skills
-- `GET /api/profile/skills`
-- `POST /api/profile/skills`
-- `PUT /api/profile/skills/{id}`
-- `DELETE /api/profile/skills/{id}`
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| GET | /jobs | User | query `q` (≤200), `workType` remote\|hybrid\|onsite, `level` internship\|entry\|junior\|mid, `page` (1), `limit` 1-100 (50) | `Job[]` newest first: `{id, title, company, location, experience, matchPercent, skills, city, workType, level, roleType, postedDaysAgo, salary?, applyUrl?, recommended}` |
+| GET | /jobs/recommended | User | query `limit` 1-20 (3) | Top recommended `Job[]` by match |
+| GET | /jobs/details | User | | `{jobId: {jobType, about, responsibilities, requirements, niceToHave, stretchSkill}}` |
+| GET | /jobs/saved | User | | `{jobId: savedAt}` |
+| GET | /jobs/search | User | query `q` (2-120), `location`, `limit` 1-30 (12), `sources` (`indeed,naukri`) | Raw live listings from Apify: `{jobs[], count, sources_requested, sources_used, sources_skipped, source_errors, source_counts, sources_no_results}`. Cached 6 h. Limit `10/minute`. 503 without `APIFY_API_TOKEN`, 502 `UPSTREAM_ERROR` on failure. |
+| GET | /jobs/{id} | User | | `{job, detail, company}` |
+| POST | /jobs/{id}/save | User | | `{jobId, savedAt}` (idempotent) |
+| DELETE | /jobs/{id}/save | User | | 204 |
+| GET | /companies | User | | `{companyName: {...profile}}` |
 
-#### Certifications
-- `GET /api/profile/certifications`
-- `POST /api/profile/certifications`
-- `PUT /api/profile/certifications/{id}`
-- `DELETE /api/profile/certifications/{id}`
+## Applications (`api/applications.py`)
 
-#### Links
-- `GET /api/profile/links`
-- `POST /api/profile/links`
-- `PUT /api/profile/links/{id}`
-- `DELETE /api/profile/links/{id}`
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| GET | /applications | User | | `[{jobId, status, title, company, notes, appliedAt, updatedAt}]` |
+| PUT | /applications/{jobId} | User | `{status: applied\|interviewing\|rejected, notes?}` | Application (upsert; notifies on status change) |
+| DELETE | /applications/{jobId} | User | | 204 |
 
----
+## Notifications (`api/notifications.py`)
 
-## 4. Resume System & Generation
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| GET | /notifications | User | query `limit` 1-100 (30) | `{items[{id, category, title, body, link, read, createdAt}], unreadCount}` |
+| POST | /notifications/read | User | `{ids[≤100]}` (empty = all) | `{unreadCount}` |
 
-### `GET /api/resumes`
-Lists all resumes owned by the authenticated user.
-- **Response `200`**:
-```json
-{
-  "data": [
-    {
-      "id": "res_101",
-      "name": "Software Engineer - General",
-      "targetRole": "Full Stack Engineer",
-      "template": "modern",
-      "sourceType": "ai_generated",
-      "sourceResumeId": null,
-      "atsScore": 88,
-      "updatedAt": "2026-03-20T14:22:00Z"
-    }
-  ]
-}
-```
+## Support (`api/support.py`)
 
-### `POST /api/resumes`
-Creates a new blank, manual, or imported resume document.
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| POST | /contact | Public, `5/hour` per IP | `{name, email, topic?, message (10-5000), website}` (`website` is a honeypot) | `{received: true}` (201). Stored; emailed to `SUPPORT_INBOX` when SMTP is set. |
+| POST | /feedback | User, `20/hour` | `{message (3-5000), page?, rating? 1-5}` | `{received: true}` (201) |
 
-### `GET /api/resumes/{id}`
-Fetches the full structured resume document.
+## Subscriptions & payments (`api/billing.py`)
 
-### `PUT /api/resumes/{id}`
-Saves changes to an existing resume document (content, template, section order).
-- Enforces user ownership.
-- Automatically saves a snapshot in `resume_versions` if content changed significantly.
+| Method | Path | Auth | Request | Response `data` |
+|---|---|---|---|---|
+| GET | /subscriptions/plans | Public | | `{free, single, monthly}` each `{name, price, currency, description}` |
+| GET | /subscriptions/current | User | | Entitlements `{plan, status, currentPeriodEnd, resumesCreated, resumesAllowance, singleResumesBalance, isUnlimited, canCreateResume, limitsEnforced}` |
+| POST | /payments/orders | User | `{plan: single\|monthly}` | `{orderId, amount (paise), currency, keyId, plan}` (201). 503 `PAYMENTS_NOT_CONFIGURED`, 502 `PAYMENT_GATEWAY_ERROR`. |
+| POST | /payments/verify | User | `{razorpayOrderId, razorpayPaymentId, razorpaySignature}` | Updated entitlements. 400 `PAYMENT_VERIFICATION_FAILED`, 404 unknown order, 409 payment reused. Granting is idempotent per order. |
+| POST | /payments/webhook | | | Not implemented yet |
 
-### `DELETE /api/resumes/{id}`
-Deletes a resume.
-
-### `POST /api/resumes/{id}/duplicate`
-Clones an existing resume document into a new one.
-
----
-
-## 5. AI Resume Pipelines
-
-### `POST /api/resumes/analyze-job`
-Analyzes a job description against the user's Career Profile.
-- **Request Body**:
-```json
-{
-  "targetRole": "Full Stack Engineer",
-  "jobDescription": "We are seeking a Full Stack Engineer experienced with React, TypeScript, and FastAPI to join our team...",
-  "careerProfile": { ... }
-}
-```
-- **Response `200`**:
-```json
-{
-  "data": {
-    "role": "Full Stack Engineer",
-    "company": "NextGen AI",
-    "location": "San Francisco, CA (Hybrid)",
-    "workType": "hybrid",
-    "experience": "1-3 years",
-    "alignmentScore": 84,
-    "keyRequirements": [
-      "2+ years with modern React & TypeScript",
-      "Experience designing RESTful APIs in Python/FastAPI",
-      "Familiarity with PostgreSQL database schema design"
-    ],
-    "matchedSkills": ["React", "TypeScript", "Python", "FastAPI", "PostgreSQL"],
-    "gaps": ["Docker / Container orchestration experience not explicitly stated"],
-    "insights": [
-      "Highlight your 'CareerCopilot' project prominently as it demonstrates matching full-stack competency."
-    ]
-  }
-}
-```
-
-### `POST /api/resumes/generate`
-Generates a complete, tailored resume document using verified user profile data.
-- **Request Body**:
-```json
-{
-  "targetRole": "Full Stack Engineer",
-  "template": "modern",
-  "jobDescription": "Full job description text...",
-  "jobAnalysis": { ... }
-}
-```
-- **Response `201`**: Returns newly created `ResumeDocument`.
-
-### `POST /api/resumes/{id}/tailor`
-Tailors an existing resume to a specific job description.
-- **Critical Rule**: The original resume (`{id}`) remains untouched.
-- A new resume is created with `source_type = 'tailored'` and `source_resume_id = '{id}'`.
-- **Request Body**:
-```json
-{
-  "jobTitle": "Senior Frontend Engineer",
-  "company": "Stripe",
-  "jobDescription": "Job description text..."
-}
-```
-- **Response `201`**: Returns the **new** tailored `ResumeDocument`.
-
----
-
-## 6. ATS Analysis
-
-### `POST /api/resumes/{id}/analyze`
-Performs deterministic keyword and structural ATS evaluation combined with AI insights.
-- **Request Body**:
-```json
-{
-  "jobDescription": "Optional job description to benchmark against..."
-}
-```
-- **Response `200`**:
-```json
-{
-  "data": {
-    "score": 85,
-    "summary": "Strong alignment with core engineering keywords. Action verbs are clear and quantifiable metrics are present.",
-    "factors": {
-      "keyword_match": 88,
-      "skills_match": 92,
-      "experience_match": 80,
-      "formatting": 95,
-      "section_completeness": 90
-    },
-    "missingKeywords": ["Docker", "CI/CD", "Unit Testing"],
-    "suggestions": [
-      "Add quantifiable outcomes to your TechStart internship bullets.",
-      "Include testing libraries (e.g., Pytest, Vitest) in your skills section."
-    ]
-  }
-}
-```
-
----
-
-## 7. Jobs & Saved Jobs
-
-### `GET /api/jobs`
-Query jobs with filtering and pagination.
-- **Query Parameters**:
-  - `q`: Search keyword
-  - `role`: Role filter
-  - `location`: Location string
-  - `workType`: `remote` | `hybrid` | `onsite`
-  - `level`: `internship` | `entry` | `junior` | `mid`
-  - `page`: Page index (default: 1)
-  - `limit`: Page size (default: 20)
-
-### `GET /api/jobs/recommended`
-Returns jobs ranked by compatibility with the user's Career Profile.
-- Returns `matchPercent` (0-100%) and breakdown for each job.
-
-### `GET /api/jobs/{id}`
-Fetches full details for a single job listing.
-
-### `POST /api/jobs/{id}/save`
-Saves a job to the user's saved list. Idempotent.
-
-### `DELETE /api/jobs/{id}/save`
-Removes a job from the user's saved list.
-
-### `GET /api/jobs/saved`
-Retrieves all saved jobs for the authenticated user.
-
-### `POST /api/jobs/{id}/tailor`
-One-click shortcut: initiates the resume tailoring workflow using the stored job listing's description.
-- Automatically passes `{ title, company, description }` into the tailoring pipeline without requiring the user to re-paste the job description.
-
----
-
-## 8. File Upload & Parsing
-
-### `POST /api/files/upload`
-Uploads a PDF or DOCX file (multipart/form-data).
-- **Validation**:
-  - Max size: 10 MB (`400 Bad Request` if exceeded)
-  - Allowed extensions: `.pdf`, `.docx`
-  - MIME type validation via magic bytes (not just filename extension)
-- **Response `201`**:
-```json
-{
-  "data": {
-    "fileId": "file_8923a10e",
-    "fileName": "alex_chen_resume.pdf",
-    "fileSize": 142850,
-    "fileType": "pdf",
-    "status": "ready"
-  }
-}
-```
-
-### `POST /api/files/{id}/parse-resume`
-Extracts text from the uploaded file and uses AI to extract structured resume and profile data.
-- **Response `200`**:
-```json
-{
-  "data": {
-    "fileId": "file_8923a10e",
-    "targetRole": "Full Stack Engineer",
-    "name": "Alex Chen",
-    "document": { ... },
-    "atsScore": 82
-  }
-}
-```
-
----
-
-## 9. Subscriptions & Plan Enforcement
-
-### `GET /api/subscriptions/current`
-Returns current plan details and remaining allowances.
-- **Response `200`**:
-```json
-{
-  "data": {
-    "plan": "free",
-    "status": "active",
-    "resumesCreated": 1,
-    "resumesAllowance": 1,
-    "singleResumesBalance": 0,
-    "isUnlimited": false,
-    "canCreateResume": false
-  }
-}
-```
-
-### `POST /api/subscriptions/checkout`
-Initializes a payment session for:
-- Single Resume: `₹49`
-- Monthly Unlimited: `₹199 / month`
+The frontend does not call the payment endpoints yet (checkout UI: Not implemented yet).

@@ -3,4 +3,6 @@ export interface User {
   name: string
   email: string
   avatarUrl?: string
+  /** From Firebase Authentication. */
+  emailVerified?: boolean
 }

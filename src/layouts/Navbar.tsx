@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, Menu } from 'lucide-react'
+import { ArrowLeft, Menu } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { SettingsNav } from '@/components/settings/SettingsNav'
 import { TemplateSearch } from '@/components/resumes/templates/TemplateSearch'
@@ -8,10 +8,10 @@ import { JobsViewTabs } from '@/components/jobs/JobsViewTabs'
 import { ClaveLogo } from '@/components/brand/ClaveLogo'
 import { buttonStyles } from '@/components/ui/buttonStyles'
 import { IconButton } from '@/components/ui/IconButton'
+import { NotificationsBell } from '@/components/navigation/NotificationsBell'
 import { ResumeFlowMobileHeader } from '@/components/navigation/ResumeFlowMobileHeader'
 import { UserMenu } from '@/layouts/UserMenu'
-import { paths, savedJobsPath } from '@/routes/navigation'
-import { toast } from '@/store/toastStore'
+import { paths } from '@/routes/navigation'
 
 import { useFlowNavStore } from '@/store/flowNavStore'
 import { useUpgradeModalStore } from '@/store/upgradeModalStore'
@@ -84,7 +84,7 @@ export function Navbar({ onOpenNavigation, navigationOpen }: NavbarProps) {
       {pathname === paths.createFromTemplate && <TemplateSearch className="hidden max-w-md flex-1 md:block" />}
       {pathname === paths.resumes && <ResumeSearch className="hidden max-w-md flex-1 md:block" />}
       {(pathname === paths.settings || pathname === paths.account) && <SettingsNav className="hidden md:block" />}
-      {pathname.startsWith(`${paths.jobs}/`) && pathname !== savedJobsPath && <div className="hidden md:block"><BackToJobs variant="button" /></div>}
+      {pathname.startsWith(`${paths.jobs}/`) && <div className="hidden md:block"><BackToJobs variant="button" /></div>}
       {pathname === paths.jobs && <JobsViewTabs className="hidden md:flex" />}
 
       {/* Right: upgrade + notifications + user (desktop for all routes, mobile for non-flow routes) */}
@@ -96,9 +96,7 @@ export function Navbar({ onOpenNavigation, navigationOpen }: NavbarProps) {
         >
           Upgrade
         </button>
-        <IconButton label="Notifications" size="sm" onClick={() => toast.info(`You're all caught up`, 'No new notifications.')}>
-          <Bell className="size-[18px]" strokeWidth={1.75} aria-hidden />
-        </IconButton>
+        <NotificationsBell />
         <UserMenu />
       </div>
     </header>

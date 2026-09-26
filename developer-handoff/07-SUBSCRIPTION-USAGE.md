@@ -1,119 +1,58 @@
-# 07 — Subscriptions & Usage Quota Enforcement
+# 07 · Subscriptions & Usage
 
-This document specifies the plan models, quota calculation logic, and server-side subscription guards for Clave.
+Code: `app/services/quota.py`, `app/api/billing.py`, `app/services/resumes.py`. Frontend: `src/services/subscription.service.ts`, upgrade modal opened automatically on `PLAN_LIMIT_REACHED` (`apiClient.ts`).
 
----
+## Plans
 
-## 1. Clave Subscription Plans
+| Plan | Price | What you get |
+|---|---|---|
+| Free | ₹0 | `FREE_RESUME_LIMIT` = 1 resume, lifetime |
+| Single Resume | `SINGLE_RESUME_PRICE_INR` = ₹49 | +1 resume credit per purchase (`subscription.singleResumesBalance`) |
+| Monthly Unlimited | `MONTHLY_PRICE_INR` = ₹199 | Unlimited resumes for `MONTHLY_PLAN_DAYS` = 30 days. One-time payment, no auto-renew. Buying again extends from the current end date. |
 
-| Plan | Price | Resume Creation Allowance | Features |
-|---|---|---|---|
-| **Free** | ₹0 | 1 resume lifetime allowance | Full access to Career Profile, ATS analysis, and job browsing |
-| **Single Resume** | ₹49 / resume | +1 resume credit per purchase | 1 tailored/AI resume creation credit with full export capabilities |
-| **Monthly Unlimited** | ₹199 / month | Unlimited resumes | Unlimited resume generation, tailoring, ATS analysis, and job matching |
+Daily AI allowance: `AI_DAILY_LIMIT_FREE` = 30, `AI_DAILY_LIMIT_PAID` = 300 while Monthly is active (see 05). Single Resume credits do not raise the AI allowance.
 
----
+## What consumes a resume credit
 
-## 2. Server-Side Enforcement Rules
+| Action | Credit |
+|---|---|
+| `POST /resumes` (manual, template, AI draft) | Yes |
+| `POST /resumes` with `sourceType: "upload"` | No (once per uploaded file) |
+| `POST /resumes/{id}/duplicate` | Yes |
+| `POST /resumes/{id}/tailor` (creates a new resume) | Yes |
+| `POST /resumes/generate` | No, but it pre-checks the allowance (402) so AI isn't spent on something that can't be saved |
+| Uploading, parsing, editing, ATS analysis, tailor analysis | No |
 
-> **CRITICAL RULE**: Do not rely on client-side state for plan enforcement. The frontend is merely a consumer. All quota validations must execute atomically on the server before initiating any AI generation or database creation.
+## Consumption order (`consume_resume_credit`)
 
-### Quota Calculation Logic
-When a user attempts to create, duplicate, or tailor a resume:
-1. Fetch the user's `subscriptions` record.
-2. If `status == 'active'` and `plan == 'monthly'` (and `expires_at > NOW()`):
-   - **Allowed** (Unlimited tier).
-3. If `single_resumes_balance > 0`:
-   - **Allowed** (Deduct 1 credit upon successful resume creation).
-4. If `plan == 'free'`:
-   - Query count of existing active resumes owned by the user.
-   - If count >= 1:
-     - **Deny** with `402 Payment Required` / `429 Quota Exceeded`.
-     - Return upgrade modal payload.
-   - If count == 0:
-     - **Allowed** (First free resume allowance).
+Atomic `find_one_and_update` steps, first match wins:
+1. `ENFORCE_PLAN_LIMITS=false` → just count (development only).
+2. Active Monthly plan → count.
+3. Free allowance left (`usage.resumesCreated < FREE_RESUME_LIMIT`) and the optional free-resume guard doesn't block → count.
+4. `singleResumesBalance > 0` → count and decrement the balance.
+5. Otherwise `402 PLAN_LIMIT_REACHED`, with `plans` (single, monthly) in the error object.
 
----
+`usage.resumesCreated` is a lifetime counter, so deleting resumes doesn't restore the free allowance.
 
-## 3. FastAPI Quota Enforcement Guard
+## Entitlements (`GET /api/subscriptions/current`)
 
-```python
-from fastapi import HTTPException, status, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from app.models.user import User
-from app.models.subscription import Subscription
-from app.models.resume import Resume
-from app.core.database import get_db
-
-async def enforce_resume_creation_quota(
-    current_user: User,
-    db: AsyncSession = Depends(get_db)
-):
-    # Fetch subscription
-    sub = await db.scalar(select(Subscription).where(Subscription.user_id == current_user.id))
-    
-    # 1. Monthly active plan = Unlimited
-    if sub and sub.plan == 'monthly' and sub.status == 'active':
-        return True
-
-    # 2. Check single resume purchase balance
-    if sub and sub.single_resumes_balance > 0:
-        return True
-
-    # 3. Check Free tier allowance
-    resume_count = await db.scalar(
-        select(func.count(Resume.id)).where(Resume.user_id == current_user.id)
-    )
-
-    if resume_count >= 1:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail={
-                "error": {
-                    "code": "PLAN_LIMIT_REACHED",
-                    "message": "You have reached your free tier allowance of 1 resume. Please upgrade or purchase a single resume credit to create more.",
-                    "plans": {
-                        "single": {"price": 49, "currency": "INR"},
-                        "monthly": {"price": 199, "currency": "INR"}
-                    }
-                }
-            }
-        )
-    return True
+```json
+{ "plan": "free|monthly", "status": "active|expired", "currentPeriodEnd": "…Z|null",
+  "resumesCreated": 1, "resumesAllowance": 1, "singleResumesBalance": 0,
+  "isUnlimited": false, "canCreateResume": false, "limitsEnforced": true }
 ```
+`plan` reports `monthly` only while `currentPeriodEnd` is in the future; an elapsed Monthly plan reports `free` with `status: "expired"`.
 
----
+## Payments (Razorpay, `api/billing.py`)
 
-## 4. Usage Tracking & Analytics
+1. `POST /api/payments/orders {plan}` creates a Razorpay order in INR (amount in paise) and stores it in `payments` with `status: "created"`. Returns `orderId`, `amount`, `currency`, `keyId`.
+2. The client opens Razorpay Checkout with those values. **Not implemented yet** in the frontend.
+3. `POST /api/payments/verify {razorpayOrderId, razorpayPaymentId, razorpaySignature}` verifies the HMAC signature, atomically marks the order paid, and grants the plan stored on the order (single: +1 credit; monthly: extend `currentPeriodEnd` by 30 days). Repeat verifications return entitlements without granting again.
 
-Every critical action increments metrics in `usage_records` for the current billing period (`YYYY-MM`):
+Without `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` the payment endpoints return `503 PAYMENTS_NOT_CONFIGURED`.
 
-```python
-from datetime import datetime
-from sqlalchemy.dialects.postgresql import insert
+Not implemented yet: Razorpay webhook (payments captured but never verified by the client are not reconciled automatically), refunds API, invoices.
 
-async def track_usage_event(user_id: UUID, event_type: str, db: AsyncSession):
-    period = datetime.utcnow().strftime("%Y-%m")
-    column_mapping = {
-        "resume_created": "resumes_created",
-        "resume_tailored": "resumes_tailored",
-        "ai_generation": "ai_generations",
-        "ats_analysis": "ats_analyses"
-    }
-    col = column_mapping.get(event_type)
-    if not col:
-        return
+## ENFORCE_PLAN_LIMITS
 
-    # Upsert with atomic increment
-    stmt = insert(UsageRecord).values(
-        user_id=user_id,
-        billing_period=period,
-        **{col: 1}
-    ).on_conflict_do_update(
-        index_elements=['user_id', 'billing_period'],
-        set_={col: getattr(UsageRecord, col) + 1}
-    )
-    await db.execute(stmt)
-    await db.commit()
-```
+Default `true`. Setting it to `false` disables resume quotas (`canCreateResume` always true, startup logs a warning). Use only in development; keep `true` in production. It does not disable the daily AI allowance.

@@ -1,5 +1,6 @@
-import { ArrowLeft, Bookmark, BookmarkCheck, ExternalLink, Target } from 'lucide-react'
+import { ArrowLeft, Bookmark, BookmarkCheck, Target } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { ApplyControl } from '@/components/jobs/ApplyControl'
 import { CompanyLogo } from '@/components/jobs/CompanyLogo'
 import { JobOverview } from '@/components/jobs/JobOverview'
 import { JobSkills } from '@/components/jobs/JobSkills'
@@ -7,7 +8,6 @@ import { WhyYouMatch } from '@/components/jobs/WhyYouMatch'
 import { Button } from '@/components/ui/Button'
 import { buttonStyles } from '@/components/ui/buttonStyles'
 import { paths } from '@/routes/navigation'
-import { toast } from '@/store/toastStore'
 import type { Job, JobDetail as JobDetailData } from '@/types/job'
 import { workTypeLabels } from '@/utils/jobFilters'
 import type { MatchReasons } from '@/utils/jobMatchReasons'
@@ -109,14 +109,7 @@ export function JobDetail({ job, detail, reasons, saved, onToggleSave, headingLe
             <Target className="size-4" aria-hidden />
             Tailor Resume
           </Link>
-          <Button
-            variant="secondary"
-            size="sm"
-            trailingIcon={<ExternalLink className="size-4" />}
-            onClick={() => toast.info('Applying isn’t connected yet', 'This will open the company’s application page.')}
-          >
-            Apply on Company Site
-          </Button>
+          <ApplyControl job={job} size="sm" />
           {saveButton}
         </div>
       </header>

@@ -12,9 +12,10 @@ import { formatRelativeTime } from '@/utils/relativeTime'
 
 type Props = ReturnType<typeof useAccountSettings>
 
-export function SecuritySection({ settings, update }: Props) {
+export function SecuritySection({ settings, revokeSession, revokeOthers, setGoogle, markPasswordChanged }: Props) {
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  const count = settings.sessions.length
 
   return (
     <>
@@ -23,19 +24,27 @@ export function SecuritySection({ settings, update }: Props) {
           <SettingsRow
             icon={LockKeyhole}
             title="Password"
-            description={`Last changed ${formatRelativeTime(settings.passwordChangedAt)}`}
+            description={
+              settings.hasPassword
+                ? settings.passwordChangedAt
+                  ? `Last changed ${formatRelativeTime(settings.passwordChangedAt)}`
+                  : 'Set when you created your account'
+                : 'You sign in with Google. To add a password, use “Forgot password” on the login page.'
+            }
             action={
-              <Button variant="secondary" size="sm" onClick={() => setPasswordOpen(true)}>
-                Change password
-              </Button>
+              settings.hasPassword && (
+                <Button variant="secondary" size="sm" onClick={() => setPasswordOpen(true)}>
+                  Change password
+                </Button>
+              )
             }
           />
-          <ConnectedAccounts connected={settings.googleConnected} onChange={(googleConnected) => update({ googleConnected })} />
+          <ConnectedAccounts connected={settings.googleConnected} onChange={setGoogle} />
           <SettingsRow
             icon={Laptop}
             title="Active sessions"
             description="Manage devices where you’re signed in to your account."
-            status={`${settings.sessions.length} active ${settings.sessions.length === 1 ? 'session' : 'sessions'}`}
+            status={count ? `${count} active ${count === 1 ? 'session' : 'sessions'}` : undefined}
             action={
               <Button variant="secondary" size="sm" onClick={() => setSessionsOpen(true)}>
                 Manage sessions
@@ -45,8 +54,8 @@ export function SecuritySection({ settings, update }: Props) {
         </div>
       </AccountSection>
 
-      {passwordOpen && <ChangePasswordModal onClose={() => setPasswordOpen(false)} onChanged={() => update({ passwordChangedAt: new Date().toISOString() })} />}
-      {sessionsOpen && <SessionsModal sessions={settings.sessions} onChange={(sessions) => update({ sessions })} onClose={() => setSessionsOpen(false)} />}
+      {passwordOpen && <ChangePasswordModal onClose={() => setPasswordOpen(false)} onChanged={markPasswordChanged} />}
+      {sessionsOpen && <SessionsModal sessions={settings.sessions} onRevoke={revokeSession} onRevokeOthers={revokeOthers} onClose={() => setSessionsOpen(false)} />}
     </>
   )
 }

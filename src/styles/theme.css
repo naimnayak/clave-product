@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+/* Dark mode: <html data-theme="dark">, set by src/store/themeStore.ts. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 @theme {
   /* Brand + neutrals */
   --color-primary: #087f5b;
@@ -15,6 +18,8 @@
   --color-secondary: #626967;
   --color-muted: #8a918e;
   --color-border: #dde5e1;
+  /* Text/icons on filled primary surfaces (buttons, active chips) */
+  --color-on-primary: #ffffff;
 
   /* Status */
   --color-success: #087f5b;
@@ -50,7 +55,7 @@
 
 /* Brand surfaces. Emerald-to-teal gradients are reserved for primary actions and a few featured areas. */
 @utility bg-brand {
-  background-image: linear-gradient(135deg, #087f5b 0%, #10b981 100%);
+  background-image: linear-gradient(135deg, var(--brand-from) 0%, var(--brand-to) 100%);
 }
 
 @utility bg-brand-feature {
@@ -61,8 +66,8 @@
 }
 
 @utility bg-tint {
-  background-color: #f6fbf8;
-  background-image: linear-gradient(180deg, #eef8f3 0%, #fbfefd 100%);
+  background-color: var(--tint-bg);
+  background-image: linear-gradient(180deg, var(--tint-from) 0%, var(--tint-to) 100%);
 }
 
 @utility bg-sidebar {
@@ -74,14 +79,14 @@
 }
 
 @utility bg-canvas {
-  background-color: #f5f7f6;
-  background-image: radial-gradient(900px 420px at 100% -8%, rgb(16 185 129 / 0.09), transparent 65%);
+  background-color: var(--color-background);
+  background-image: radial-gradient(900px 420px at 100% -8%, var(--canvas-glow), transparent 65%);
 }
 
 @utility icon-tile {
   color: var(--color-primary);
-  background-image: linear-gradient(135deg, #e3f4ec, #f5fbf8);
-  box-shadow: inset 0 0 0 1px rgb(8 127 91 / 0.16);
+  background-image: linear-gradient(135deg, var(--icon-tile-from), var(--icon-tile-to));
+  box-shadow: inset 0 0 0 1px var(--icon-tile-ring);
 }
 
 @utility nav-active {
@@ -530,3 +535,54 @@ a.btn-micro-interact {
   }
 }
 
+
+/* ─── Theme variables used by the utilities above ─────────────────────────── */
+:root {
+  --brand-from: #087f5b;
+  --brand-to: #10b981;
+  --tint-bg: #f6fbf8;
+  --tint-from: #eef8f3;
+  --tint-to: #fbfefd;
+  --canvas-glow: rgb(16 185 129 / 0.09);
+  --icon-tile-from: #e3f4ec;
+  --icon-tile-to: #f5fbf8;
+  --icon-tile-ring: rgb(8 127 91 / 0.16);
+  --editor-canvas: #eaeeeb;
+}
+
+/* Dark theme. The resume "paper" stays white on purpose so previews match the PDF.
+   Also usable on any element (data-theme="dark") to render a dark island, e.g. the public guide. */
+:root[data-theme='dark'],
+[data-theme='dark'] {
+  color-scheme: dark;
+  --color-primary: #34c38f;
+  --color-primary-deep: #6ee7b7;
+  --color-on-primary: #04130e;
+  --color-chip: #1b2724;
+  --color-background: #0b1211;
+  --color-surface: #131c1a;
+  --color-text: #e7ecea;
+  --color-secondary: #a3aeaa;
+  --color-muted: #8a9591;
+  --color-border: #26332f;
+  --color-success: #34c38f;
+  --color-warning: #e0a84a;
+  --color-error: #f87171;
+  --color-error-deep: #ef4444;
+  --color-info: #60a5fa;
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px -6px rgb(0 0 0 / 0.5);
+  --shadow-brand: 0 6px 16px -6px rgb(52 195 143 / 0.35), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-popover: 0 8px 24px -4px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.35);
+  --brand-from: #2fb886;
+  --brand-to: #5fdcaa;
+  --tint-bg: #12211d;
+  --tint-from: #13241f;
+  --tint-to: #111b19;
+  --canvas-glow: rgb(52 195 143 / 0.07);
+  --icon-tile-from: #16302a;
+  --icon-tile-to: #122420;
+  --icon-tile-ring: rgb(52 195 143 / 0.22);
+  --editor-canvas: #0a100f;
+}

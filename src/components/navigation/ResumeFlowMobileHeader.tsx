@@ -1,10 +1,9 @@
-import { ArrowLeft, Bell } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ClaveLogo } from '@/components/brand/ClaveLogo'
-import { IconButton } from '@/components/ui/IconButton'
+import { NotificationsBell } from '@/components/navigation/NotificationsBell'
 import { UserMenu } from '@/layouts/UserMenu'
 import { paths } from '@/routes/navigation'
-import { toast } from '@/store/toastStore'
 import { useUpgradeModalStore } from '@/store/upgradeModalStore'
 
 interface ResumeFlowMobileHeaderProps {
@@ -49,13 +48,7 @@ export function ResumeFlowMobileHeader({ onBack }: ResumeFlowMobileHeaderProps) 
           Upgrade
         </button>
 
-        <IconButton
-          label="Notifications"
-          size="sm"
-          onClick={() => toast.info(`You're all caught up`, 'No new notifications.')}
-        >
-          <Bell className="size-[18px]" strokeWidth={1.75} aria-hidden="true" />
-        </IconButton>
+        <NotificationsBell />
 
         <UserMenu />
       </div>

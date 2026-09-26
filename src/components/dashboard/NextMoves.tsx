@@ -4,8 +4,8 @@ import type { NextMove } from '@/types/career'
 import { cn } from '@/utils/cn'
 
 const tints = {
-  mint: 'bg-[#dcf3e8] text-primary-deep',
-  amber: 'bg-[#fbeed9] text-[#a16207]',
+  mint: 'bg-primary/12 text-primary-deep',
+  amber: 'bg-warning/12 text-warning',
 }
 
 export function NextMoves({ moves }: { moves: NextMove[] }) {

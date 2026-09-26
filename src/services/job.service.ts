@@ -1,30 +1,56 @@
-import { mockJobDetails } from '@/mocks/jobDetails.mock'
-import { mockJobs, recommendedJobIds } from '@/mocks/jobs.mock'
-import { mockCompanies } from '@/mocks/companies.mock'
+import { apiClient, orNull } from '@/services/apiClient'
 import type { CompanyInfo, Job, JobDetail } from '@/types/job'
 
-/** Mock-backed. Swap for `apiClient.get<Job[]>('/jobs')` and `/jobs/recommended` later. */
+/** Plain-text job description from a catalog listing, used to prefill the Tailor flow. */
+export function jobToDescription(job: Job, detail: JobDetail): string {
+  const list = (heading: string, items: string[]) => (items.length ? `${heading}:\n${items.map((item) => `- ${item}`).join('\n')}` : '')
+  return [
+    `${job.title} at ${job.company} (${job.location}${job.experience ? `, ${job.experience}` : ''}).`,
+    detail.about,
+    list('Responsibilities', detail.responsibilities),
+    list('Requirements', detail.requirements),
+    list('Nice to have', detail.niceToHave),
+    job.skills.length ? `Skills: ${job.skills.join(', ')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/**
+ * Jobs catalog (GET /api/jobs). matchPercent and `recommended` are computed per user on the backend
+ * from the Career Profile. The catalog is currently the seeded demo set; see backend/app/seed.
+ */
 export async function getJobs(): Promise<Job[]> {
-  return Promise.resolve(mockJobs)
+  return apiClient.get<Job[]>('/jobs?limit=100')
 }
 
 export async function getRecommendedJobs(limit = 3): Promise<Job[]> {
-  return Promise.resolve(mockJobs.filter((job) => recommendedJobIds.includes(job.id)).slice(0, limit))
+  return apiClient.get<Job[]>(`/jobs/recommended?limit=${limit}`)
 }
 
-/** Mock-backed. Swap for `apiClient.get<Job & JobDetail>(`/jobs/${id}`)` later. */
 export async function getJobById(id: string): Promise<{ job: Job; detail: JobDetail } | null> {
-  const job = mockJobs.find((candidate) => candidate.id === id)
-  const detail = mockJobDetails[id]
-  return Promise.resolve(job && detail ? { job, detail } : null)
+  return orNull(apiClient.get<{ job: Job; detail: JobDetail }>(`/jobs/${encodeURIComponent(id)}`))
 }
 
-/** Mock-backed. Swap for a batched details endpoint (or per-job fetch on selection) later. */
+/** Long-form details for every listing, keyed by job id. */
 export async function getJobDetails(): Promise<Record<string, JobDetail>> {
-  return Promise.resolve(mockJobDetails)
+  return apiClient.get<Record<string, JobDetail>>('/jobs/details')
 }
 
-/** Mock-backed. Swap for `apiClient.get('/companies/:id')` (or include it in the job payload) later. */
+/** Company profiles keyed by company name. */
 export async function getCompanies(): Promise<Record<string, CompanyInfo>> {
-  return Promise.resolve(mockCompanies)
+  return apiClient.get<Record<string, CompanyInfo>>('/companies')
+}
+
+/** jobId -> ISO date saved */
+export async function getSavedJobs(): Promise<Record<string, string>> {
+  return apiClient.get<Record<string, string>>('/jobs/saved')
+}
+
+export async function saveJob(id: string): Promise<void> {
+  await apiClient.post(`/jobs/${encodeURIComponent(id)}/save`)
+}
+
+export async function unsaveJob(id: string): Promise<void> {
+  await apiClient.delete(`/jobs/${encodeURIComponent(id)}/save`)
 }

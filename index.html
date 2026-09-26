@@ -6,6 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Clave — the AI-powered career workspace for students and early-career professionals." />
     <title>Clave</title>
+    <script>
+      // Apply the saved Appearance before first paint (mirrors src/store/themeStore.ts).
+      ;(function () {
+        try {
+          var path = location.pathname
+          var lightOnly = ['/login', '/signup', '/forgot-password', '/about', '/pricing', '/contact', '/how-it-works', '/legal']
+          var forced = path === '/' || lightOnly.some(function (p) { return path === p || path.indexOf(p + '/') === 0 })
+          var pref = (JSON.parse(localStorage.getItem('clave.theme') || '{}').state || {}).preference || 'light'
+          var dark = !forced && (pref === 'dark' || (pref === 'system' && matchMedia('(prefers-color-scheme: dark)').matches))
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) {}
+      })()
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

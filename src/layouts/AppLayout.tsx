@@ -15,7 +15,7 @@ export function AppLayout() {
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
   return (
-    <div className={flat ? 'min-h-dvh bg-[#f7f8f6]' : 'min-h-dvh bg-canvas'}>
+    <div className={flat ? 'min-h-dvh bg-background' : 'min-h-dvh bg-canvas'}>
       {!flat && <AmbientBackground />}
       <a
         href="#main-content"

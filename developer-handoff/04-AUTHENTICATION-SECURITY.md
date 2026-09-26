@@ -1,174 +1,78 @@
-# 04 — Authentication & Security Architecture
+# 04 · Authentication & Security
 
-This document specifies the security, authentication, and authorization layer for Clave.
+## Sign-in flow
 
----
+1. The frontend signs the user in with the Firebase JS SDK (`src/lib/firebase.ts`, `auth.service.ts`): email/password or federated providers enabled in the Firebase project.
+2. Every API call (`src/services/apiClient.ts`) sends `Authorization: Bearer <Firebase ID token>` and `X-Clave-Session: <per-browser random id>`.
+3. After each sign-in or sign-up the app calls `POST /api/auth/sync`, which creates or refreshes the `users` document.
+4. Password changes, resets and email verification happen in Firebase. The backend only records a notice (`POST /api/me/security/password-changed`).
 
-## 1. Authentication Flow
+There are no backend-issued JWTs, passwords or refresh tokens. Clave does not store credentials.
 
-Clave supports two deployment modes:
-1. **Supabase Auth Mode**: FastAPI validates JWT tokens issued by Supabase using the Supabase JWT secret or JWKS.
-2. **Native JWT Mode**: FastAPI issues and verifies its own asymmetric (RS256) or symmetric (HS256) tokens with short-lived access tokens (15–60 mins) and long-lived refresh tokens (30 days).
+## Token verification (`app/core/security.py`)
 
-Both modes expose the identical dependency interface `get_current_user` in FastAPI routes.
+- `init_firebase()` loads the service account from `FIREBASE_SERVICE_ACCOUNT` (default `secrets/firebase-service-account.json`) at startup. The server refuses to start if the file is missing.
+- `get_current_user` verifies the ID token with `firebase_admin.auth.verify_id_token` (10 s clock skew) in a worker thread and returns `CurrentUser(uid, email, name, picture, email_verified, provider)`.
+- Errors: missing/invalid token → `401 UNAUTHENTICATED`; expired → `401 TOKEN_EXPIRED` (the client force-refreshes the token and retries once); Firebase public keys unreachable → `503 SERVICE_UNAVAILABLE`.
+- Any other `401` makes the client sign the user out.
 
-```text
-Client (React)                       FastAPI Backend                     Database / Supabase
-      │                                    │                                      │
-      │ 1. POST /api/auth/login            │                                      │
-      ├───────────────────────────────────►│                                      │
-      │                                    │ 2. Verify password / credentials     │
-      │                                    ├─────────────────────────────────────►│
-      │                                    │◄─────────────────────────────────────┤
-      │ 3. Return Access + Refresh Tokens  │                                      │
-      │◄───────────────────────────────────┤                                      │
-      │                                    │                                      │
-      │ 4. Request with Bearer Token       │                                      │
-      ├───────────────────────────────────►│                                      │
-      │                                    │ 5. Validate JWT Signature & Expiry   │
-      │                                    │ 6. Extract user_id                   │
-      │                                    │ 7. Query User entity & Attach to req │
-      │                                    ├─────────────────────────────────────►│
-      │                                    │◄─────────────────────────────────────┤
-      │                                    │ 8. Enforce Resource Ownership        │
-      │ 9. Return Protected Data           │                                      │
-      │◄───────────────────────────────────┤                                      │
-```
+## Device sessions (`app/services/sessions.py`)
 
----
+Firebase does not expose sessions, so Clave tracks them:
+- The browser keeps a random id in `localStorage` (`clave.session-id`), rotated on every sign-in and sign-out.
+- On each authenticated request, `check_and_touch` validates the id (16-64 chars, `[A-Za-z0-9-]`), creates a `sessions` document on first sight (device label parsed from the User-Agent), and updates `lastActiveAt` at most every 5 minutes. Sessions expire 60 days after last activity (TTL).
+- A revoked session returns `401 SESSION_REVOKED` on every call from that browser, which signs it out.
+- Endpoints: `GET /api/me/security` (list), `DELETE /api/me/sessions/{id}`, `POST /api/me/sessions/revoke-others`, `POST /api/auth/logout`.
+- Requests without the header still authenticate; they just aren't tracked as a session.
 
-## 2. FastAPI Authentication Dependencies
+## Authorization
 
-### `get_current_user` Implementation
-```python
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.config import settings
-from app.core.database import get_db
-from app.models.user import User
+Single role (end user). Every user-owned query filters on the Firebase `uid`; accessing someone else's resource returns `404 RESOURCE_NOT_FOUND`, never `403`. There is no admin API.
 
-security = HTTPBearer()
+## Transport & CORS (`app/main.py`)
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    token = credentials.credentials
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail={"error": {"code": "INVALID_TOKEN", "message": "Could not validate credentials"}},
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE if hasattr(settings, 'JWT_AUDIENCE') else None
-        )
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+- CORS origins from `ALLOWED_ORIGINS`; methods GET/POST/PUT/PATCH/DELETE/OPTIONS; headers `Authorization`, `Content-Type`, `X-Clave-Session`; `Content-Disposition` exposed; `allow_credentials=False` (no cookies).
+- `/api/docs` and `/api/openapi.json` are disabled when `APP_ENV=production`.
+- Run behind HTTPS in production (see 12).
 
-    user = await db.get(User, user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "USER_NOT_FOUND", "message": "User inactive or does not exist"}}
-        )
-    return user
-```
+## Rate limiting (`app/core/limiter.py`)
 
----
+slowapi, keyed by `uid:<uid>` when signed in, otherwise `ip:<address>`. Counters live in `RATE_LIMIT_STORAGE_URI` (`memory://` for one process; use `redis://…` with several workers).
 
-## 3. Strict Resource Ownership Enforcement
+| Scope | Limit |
+|---|---|
+| AI endpoints (`[AI]` in 02) | `AI_RATE_LIMIT` (default `30/minute`) |
+| `GET /jobs/search` | `10/minute` |
+| `POST /contact` | `5/hour` |
+| `POST /feedback` | `20/hour` |
 
-A critical security requirement is that **User A can never read, modify, or delete resources belonging to User B**.
+Separately, daily AI allowances per plan return `429 AI_DAILY_LIMIT_REACHED` (see 05).
 
-### Ownership Guard Example: Resumes
-```python
-from uuid import UUID
+## Input handling
 
-async def get_user_resume_or_404(
-    resume_id: UUID,
-    current_user: User,
-    db: AsyncSession
-) -> Resume:
-    stmt = select(Resume).where(Resume.id == resume_id)
-    result = await db.execute(stmt)
-    resume = result.scalar_one_or_none()
+- All bodies are Pydantic models with length limits (see 03); unknown fields are ignored.
+- Uploads are identified by magic bytes, capped at `MAX_UPLOAD_BYTES`, and file names are sanitized (see 06).
+- Avatars accept only image data URLs (≤ 400k chars) or `https://` URLs.
+- Prompts treat job descriptions and resumes as untrusted data and tell the AI model to ignore instructions inside them (see 05).
+- The contact form has a honeypot field.
+- Unhandled exceptions are logged and returned as a generic `500 INTERNAL_ERROR` without stack traces.
 
-    if not resume:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": {"code": "RESUME_NOT_FOUND", "message": "Resume does not exist"}}
-        )
+## Payments
 
-    # Ownership verification
-    if resume.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": {"code": "FORBIDDEN", "message": "You do not have permission to access this resume"}}
-        )
+`POST /api/payments/verify` checks the Razorpay HMAC-SHA256 signature with `hmac.compare_digest`. The plan comes from the order stored at creation time, never from the client. An order is marked paid with an atomic `status: "created" → "paid"` update, so a plan is granted once per order; `paymentId` is unique. Webhook: Not implemented yet.
 
-    return resume
-```
+## Abuse controls
 
----
+- Free resume limit uses a lifetime counter (deleting resumes does not reset it).
+- Optional free-resume guard (`FREE_RESUME_GUARD_ENABLED`, off by default) stores salted SHA-256 hashes of IP and a header fingerprint and blocks a second free resume from the same network/device.
 
-## 4. Rate Limiting Strategy
+## Secrets
 
-To prevent denial of service and API abuse (particularly on LLM endpoints), apply rate limiting with `slowapi`:
+- Service-account JSON files go in `backend/secrets/` (git-ignored). Never commit `backend/.env`, `.env.local` or anything in `secrets/`.
+- The frontend only receives the Firebase web config (`VITE_FIREBASE_*`) and, for checkout, the public Razorpay key id.
 
-```python
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+## Privacy
 
-limiter = Limiter(key_func=get_remote_address)
-
-# In router:
-@router.post("/resumes/analyze-job")
-@limiter.limit("15/minute")
-async def analyze_job(request: Request, ...):
-    ...
-```
-
-### Rate Limit Thresholds:
-- **General APIs**: 120 requests / minute
-- **Auth Endpoints** (`/login`, `/register`): 10 requests / minute (prevents brute force)
-- **AI Endpoints** (`/analyze-job`, `/generate`, `/tailor`, `/analyze`): 15 requests / minute
-
----
-
-## 5. CORS Configuration
-
-Configure CORS explicitly to allow only approved frontend origins:
-```python
-from fastapi.middleware.cors import CORSMiddleware
-
-origins = [
-    "http://localhost:5173", # Vite dev server
-    "https://clave.app",
-    "https://*.clave.app"
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
-```
-
----
-
-## 6. Sensitive Data Sanitization
-
-- **Passphrases**: Hash with Argon2id (`passlib[argon2]`) or bcrypt with work factor >= 12.
-- **Log Masking**: Implement logging filters that scrub `password`, `token`, `access_token`, `authorization`, and full user addresses from log streams.
-- **Never return password hashes** in any API response model.
+- `GET /api/me/export` returns all stored data as JSON.
+- `DELETE /api/me` deletes user data and the Firebase login (payments are retained for accounting).
+- The assistant uses the Career Profile only when Settings → Privacy → Personalize AI is on.

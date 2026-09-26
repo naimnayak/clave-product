@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { Input } from '@/components/ui/Input'
 import { linkStyles } from '@/components/ui/linkStyles'
+import { legalPaths } from '@/components/legal/legalInfo'
 import { paths } from '@/routes/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { isValidEmail } from '@/utils/validation'
@@ -82,7 +83,18 @@ export function LoginPage() {
         loading={pending === 'google'}
         disabled={pending === 'form'}
       />
-      <p className="mt-8 text-center text-sm text-secondary">
+      <p className="mt-5 text-center text-xs leading-relaxed text-muted">
+        By continuing, you agree to Clave’s{' '}
+        <Link to={legalPaths.terms} target="_blank" rel="noopener" className={linkStyles}>
+          Terms
+        </Link>{' '}
+        and{' '}
+        <Link to={legalPaths.privacy} target="_blank" rel="noopener" className={linkStyles}>
+          Privacy Policy
+        </Link>
+        .
+      </p>
+      <p className="mt-6 text-center text-sm text-secondary">
         New to Clave?{' '}
         <Link to={paths.signup} className={linkStyles}>
           Sign up

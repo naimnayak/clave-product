@@ -1,33 +1,54 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
+import type { KeyboardEvent } from 'react'
+import { useThemeStore } from '@/store/themeStore'
+import type { ThemePreference } from '@/store/themeStore'
 import { cn } from '@/utils/cn'
 
-const options = [
-  { id: 'light', label: 'Light', icon: Sun, available: true },
-  { id: 'dark', label: 'Dark', icon: Moon, available: false },
-  { id: 'system', label: 'System', icon: Monitor, available: false },
+const options: Array<{ id: ThemePreference; label: string; icon: typeof Sun }> = [
+  { id: 'light', label: 'Light', icon: Sun },
+  { id: 'dark', label: 'Dark', icon: Moon },
+  { id: 'system', label: 'System', icon: Monitor },
 ]
 
-/** Clave is light-only for now: Dark and System are shown but not selectable yet. */
+/** Light, Dark, or follow the device setting. Applies instantly on this device. */
 export function AppearanceControl() {
+  const preference = useThemeStore((state) => state.preference)
+  const setPreference = useThemeStore((state) => state.setPreference)
+
+  // Arrow keys move between options, as expected for a radio group.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(event.key)) return
+    event.preventDefault()
+    const index = options.findIndex((option) => option.id === preference)
+    const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1
+    const next = options[(index + step + options.length) % options.length]
+    setPreference(next.id)
+    event.currentTarget.querySelector<HTMLButtonElement>(`[data-id="${next.id}"]`)?.focus()
+  }
+
   return (
-    <div role="radiogroup" aria-label="Appearance" className="inline-flex overflow-hidden rounded-control border border-border">
-      {options.map(({ id, label, icon: Icon, available }) => (
-        <button
-          key={id}
-          type="button"
-          role="radio"
-          aria-checked={id === 'light'}
-          disabled={!available}
-          title={available ? undefined : 'Coming soon'}
-          className={cn(
-            'flex h-9 items-center gap-2 px-3.5 text-[13px] font-medium disabled:cursor-not-allowed',
-            id === 'light' ? 'bg-tint text-primary-deep ring-1 ring-primary/25 ring-inset' : 'text-secondary opacity-60',
-          )}
-        >
-          <Icon className="size-4" aria-hidden />
-          {label}
-        </button>
-      ))}
+    <div role="radiogroup" aria-label="Appearance" onKeyDown={onKeyDown} className="inline-flex overflow-hidden rounded-control border border-border">
+      {options.map(({ id, label, icon: Icon }) => {
+        const checked = preference === id
+        return (
+          <button
+            key={id}
+            data-id={id}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            tabIndex={checked ? 0 : -1}
+            onClick={() => setPreference(id)}
+            className={cn(
+              'flex h-9 items-center gap-2 px-3.5 text-[13px] font-medium transition-colors',
+              checked ? 'bg-tint text-primary-deep ring-1 ring-primary/25 ring-inset' : 'text-secondary hover:text-text',
+            )}
+          >
+            <Icon className="size-4" aria-hidden />
+            {label}
+          </button>
+        )
+      })}
     </div>
   )
 }

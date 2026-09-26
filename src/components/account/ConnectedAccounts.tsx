@@ -16,9 +16,23 @@ function GoogleMark() {
   )
 }
 
-/** Google is the only provider. Mock connect and disconnect, no real OAuth. */
-export function ConnectedAccounts({ connected, onChange }: { connected: boolean; onChange: (connected: boolean) => void }) {
+/** Google sign-in linked to this account through Firebase (link / unlink). */
+export function ConnectedAccounts({ connected, onChange }: { connected: boolean; onChange: (connect: boolean) => Promise<void> }) {
   const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const toggle = async () => {
+    setBusy(true)
+    try {
+      await onChange(!connected)
+      toast.success(connected ? 'Google disconnected' : 'Google connected')
+      setOpen(false)
+    } catch (error) {
+      toast.error(connected ? 'Couldn’t disconnect Google' : 'Couldn’t connect Google', error instanceof Error ? error.message : 'Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <>
@@ -52,21 +66,16 @@ export function ConnectedAccounts({ connected, onChange }: { connected: boolean;
               <Button variant="secondary" onClick={() => setOpen(false)}>
                 Close
               </Button>
-              <Button
-                variant={connected ? 'destructive' : 'primary'}
-                onClick={() => {
-                  onChange(!connected)
-                  toast.success(connected ? 'Google disconnected' : 'Google connected')
-                  setOpen(false)
-                }}
-              >
+              <Button variant={connected ? 'destructive' : 'primary'} loading={busy} onClick={() => void toggle()}>
                 {connected ? 'Disconnect' : 'Connect Google'}
               </Button>
             </>
           }
         >
           <p className="text-sm text-secondary">
-            {connected ? 'Disconnecting removes Google as a sign-in option. You’ll still be able to sign in with your email and password.' : 'This is a preview: no request is sent to Google yet.'}
+            {connected
+              ? 'Disconnecting removes Google as a sign-in option. You’ll still be able to sign in with your email and password.'
+              : 'A Google window opens so you can choose the account to connect. Clave only receives your name, email address and profile photo.'}
           </p>
         </Modal>
       )}

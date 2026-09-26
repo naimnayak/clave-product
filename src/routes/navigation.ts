@@ -30,7 +30,6 @@ export const paths = {
 } as const
 
 export const resumePath = (id: string) => `/resumes/${id}/edit`
-export const savedJobsPath = '/jobs/saved'
 export const jobPath = (id: string) => `/jobs/${id}`
 
 export interface NavItem {
@@ -48,15 +47,3 @@ export const primaryNav: NavItem[] = [
 ]
 
 export const settingsNav: NavItem = { label: 'Settings', path: paths.settings, icon: Settings }
-
-/** Every route that exists only as a shell placeholder until its screen is built. */
-export const placeholderRoutes: Array<{ path: string; title: string }> = [
-  { path: paths.importResume, title: 'Import Resume' },
-  { path: '/jobs/saved', title: 'Saved Jobs' },
-  { path: paths.assistant, title: 'AI Assistant' },
-  { path: paths.mockInterview, title: 'AI Mock Interview' },
-  { path: paths.settings, title: 'Settings' },
-  { path: paths.account, title: 'Account' },
-  { path: paths.guide, title: 'User Guide' },
-  { path: paths.upgrade, title: 'Upgrade' },
-]

@@ -21,6 +21,9 @@ interface ResumeTopBarProps {
   onTemplateChange: (id: TemplateId) => void
   onSave: () => void
   onDownload: () => void
+  /** Enables the AI review in the ATS popover. */
+  resumeId?: string
+  beforeReview?: () => Promise<unknown>
 }
 
 function SaveStatus({ state }: { state: SaveState }) {
@@ -104,7 +107,7 @@ export function DownloadButton({ onClick, compact }: { onClick: () => void; comp
   )
 }
 
-export function ResumeTopBar({ name, onNameChange, saveState, ats, template, onTemplateChange, onSave, onDownload }: ResumeTopBarProps) {
+export function ResumeTopBar({ name, onNameChange, saveState, ats, template, onTemplateChange, onSave, onDownload, resumeId, beforeReview }: ResumeTopBarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 shadow-xs sm:gap-3 sm:px-4">
       {/* Left: back + name + save status */}
@@ -128,7 +131,7 @@ export function ResumeTopBar({ name, onNameChange, saveState, ats, template, onT
 
       {/* Right: ATS + template + download + save */}
       <div className="flex shrink-0 items-center gap-1.5">
-        <AtsScorePopover result={ats} />
+        <AtsScorePopover result={ats} resumeId={resumeId} beforeReview={beforeReview} />
         <span className="hidden h-5 w-px bg-border md:block" aria-hidden />
         <span className="hidden md:block">
           <TemplateMenu value={template} onChange={onTemplateChange} />

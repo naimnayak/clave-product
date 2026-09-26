@@ -26,10 +26,13 @@ function JobDetailScreen({ jobId }: { jobId: string }) {
 
   useEffect(() => {
     let active = true
-    Promise.all([getJobById(jobId), getProfile(), getCompanies()]).then(([found, profile, companies]) => {
-      if (!active) return
-      setState(found ? { status: 'ready', job: found.job, detail: found.detail, profile, company: companies[found.job.company] } : { status: 'missing' })
-    })
+    Promise.all([getJobById(jobId), getProfile(), getCompanies()]).then(
+      ([found, profile, companies]) => {
+        if (!active) return
+        setState(found ? { status: 'ready', job: found.job, detail: found.detail, profile, company: companies[found.job.company] } : { status: 'missing' })
+      },
+      () => active && setState({ status: 'missing' }),
+    )
     return () => {
       active = false
     }

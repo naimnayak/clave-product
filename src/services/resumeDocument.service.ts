@@ -1,20 +1,28 @@
 import { getProfile } from '@/services/profile.service'
 import { readSettings } from '@/services/settings.service'
-import { listResumes, upsertResume } from '@/services/resume.service'
-import { readDoc, writeDoc } from '@/services/resumeDocStorage'
+import { apiClient, orNull } from '@/services/apiClient'
 import { useAuthStore } from '@/store/authStore'
+import type { ResumeType } from '@/types/resume'
 import type { ResumeDocument, ResumeSectionKey, TemplateId } from '@/types/resumeDocument'
-import { computeAts } from '@/utils/ats'
 import { buildContentFromProfile, defaultSectionOrder, emptyResumeContent } from '@/utils/resumeFromProfile'
 
-/** Mock builder persistence. The real API would store the document and return the same shape. */
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/** Resume documents (GET/PUT/POST /api/resumes). The backend also recomputes each resume's ATS score on save. */
 
-async function buildDocument(id: string, name: string, targetRole: string, start: 'profile' | 'blank'): Promise<ResumeDocument> {
+type SourceType = 'manual' | 'template' | 'ai' | 'upload' | 'tailored' | 'duplicate'
+
+const path = (id: string) => `/resumes/${encodeURIComponent(id)}`
+const documentFields = (doc: ResumeDocument) => ({
+  name: doc.name,
+  targetRole: doc.targetRole,
+  template: doc.template,
+  sectionOrder: doc.sectionOrder,
+  content: doc.content,
+})
+
+async function buildDocument(name: string, targetRole: string, start: 'profile' | 'blank'): Promise<Omit<ResumeDocument, 'id'>> {
   const user = useAuthStore.getState().user
   const profile = start === 'profile' ? await getProfile() : null
   return {
-    id,
     name,
     targetRole,
     template: 'classic',
@@ -24,41 +32,18 @@ async function buildDocument(id: string, name: string, targetRole: string, start
   }
 }
 
-/** Persists the document and mirrors its name, role and ATS score into the resume list. */
-export async function saveResumeDocument(doc: ResumeDocument, options: { touch?: boolean } = { touch: true }): Promise<void> {
-  const existing = (await listResumes()).find((r) => r.id === doc.id)
-  const updatedAt = options.touch === false && existing ? existing.updatedAt : new Date().toISOString()
-  writeDoc({ ...doc, updatedAt })
-  await upsertResume({
-    id: doc.id,
-    name: doc.name,
-    targetRole: doc.targetRole,
-    atsScore: computeAts(doc).total,
-    updatedAt,
-    type: existing?.type ?? 'base',
-    tailoredFor: existing?.tailoredFor,
-    status: existing?.status,
-  })
-  await wait(350)
+/** Persists builder edits. The `touch` option is kept for callers; the server always stamps updatedAt. */
+export async function saveResumeDocument(doc: ResumeDocument, _options: { touch?: boolean } = { touch: true }): Promise<void> {
+  await apiClient.put(path(doc.id), documentFields(doc))
 }
 
-/** Opens a resume. Library resumes without a saved document are built from the Career Profile on first open. */
 export async function getResumeDocument(id: string): Promise<ResumeDocument | null> {
-  const meta = (await listResumes()).find((r) => r.id === id)
-  const stored = readDoc(id)
-  if (stored) return meta ? { ...stored, name: meta.name } : stored
-  if (!meta) return null
-  const doc = await buildDocument(id, meta.name, meta.targetRole, 'profile')
-  await saveResumeDocument(doc, { touch: false })
-  return doc
+  return orNull(apiClient.get<ResumeDocument>(path(id)))
 }
 
-/** For library thumbnails: the saved document, or a fresh one from the Career Profile. Never writes. */
+/** For library thumbnails and the preview dialog. */
 export async function getResumePreview(id: string): Promise<ResumeDocument | null> {
-  const stored = readDoc(id)
-  if (stored) return stored
-  const meta = (await listResumes()).find((r) => r.id === id)
-  return meta ? buildDocument(id, meta.name, meta.targetRole, 'profile') : null
+  return getResumeDocument(id)
 }
 
 export interface CreateOptions {
@@ -72,33 +57,32 @@ export interface CreateOptions {
 /** Creates and saves a new resume for the manual and template flows. */
 export async function createResumeDocument(options: CreateOptions): Promise<ResumeDocument> {
   const role = options.targetRole ?? (options.start === 'profile' ? ((await getProfile())?.targetRoles[0] ?? '') : '')
-  const doc = await buildDocument(`res_${crypto.randomUUID()}`, 'Untitled Resume', role, options.start)
-  const created: ResumeDocument = {
+  const doc = await buildDocument('Untitled Resume', role, options.start)
+  return apiClient.post<ResumeDocument>('/resumes', {
     ...doc,
-    targetRole: role,
     name: options.name?.trim() || (role ? `${role} Resume` : 'Untitled Resume'),
     template: options.template ?? readSettings().defaultTemplate,
     sectionOrder: options.sectionOrder ?? doc.sectionOrder,
-  }
-  await saveResumeDocument(created)
-  return created
+    type: 'base',
+    sourceType: options.template ? 'template' : 'manual',
+  })
 }
 
-/** Saves an already-prepared document (AI draft or tailored copy) as a new resume. */
+/** Saves an already-prepared document (AI draft, upload or tailored copy) as a new resume. */
 export async function createResumeFromDocument(
   doc: ResumeDocument,
-  extras: { type: 'base' | 'tailored'; tailoredFor?: string; name?: string },
+  extras: { type: ResumeType; tailoredFor?: string; name?: string; sourceType?: SourceType; sourceFileId?: string },
 ): Promise<ResumeDocument> {
-  const created: ResumeDocument = { ...doc, id: `res_${crypto.randomUUID()}`, name: extras.name ?? doc.name }
-  writeDoc(created)
-  await upsertResume({
-    id: created.id,
-    name: created.name,
-    targetRole: created.targetRole,
-    atsScore: computeAts(created).total,
-    updatedAt: new Date().toISOString(),
+  // A tailored copy keeps the source resume's id until it is saved, which links it to the original.
+  const fromExisting = extras.type === 'tailored' && !doc.id.startsWith('draft_')
+  return apiClient.post<ResumeDocument>('/resumes', {
+    ...documentFields(doc),
+    name: extras.name ?? doc.name,
     type: extras.type,
     tailoredFor: extras.tailoredFor,
+    sourceType: extras.sourceType ?? (extras.type === 'tailored' ? 'tailored' : doc.id.startsWith('draft_') ? 'ai' : 'manual'),
+    sourceResumeId: fromExisting ? doc.id : undefined,
+    // Saving your own uploaded resume doesn't use a plan credit; the server checks the upload is yours.
+    sourceFileId: extras.sourceFileId,
   })
-  return created
 }

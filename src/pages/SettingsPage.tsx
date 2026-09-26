@@ -1,15 +1,19 @@
-import { Bell, Briefcase, Clock, Download, FileText, Globe, LayoutTemplate, Lightbulb, LineChart, Mail, MessageCircleQuestion, Palette, Sparkles, BookOpen } from 'lucide-react'
-import { useEffect } from 'react'
+import { Bell, Briefcase, Clock, Download, FileText, Globe, LayoutTemplate, Lightbulb, LineChart, Mail, MessageCircleQuestion, Palette, Scale, Sparkles, BookOpen } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { legalPaths } from '@/components/legal/legalInfo'
 import { AppearanceControl } from '@/components/settings/AppearanceControl'
+import { FeedbackModal } from '@/components/settings/FeedbackModal'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { SettingsLayout } from '@/components/settings/SettingsLayout'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { Button } from '@/components/ui/Button'
+import { buttonStyles } from '@/components/ui/buttonStyles'
 import { Select } from '@/components/ui/Select'
 import { Toggle } from '@/components/ui/Toggle'
 import { useSettings } from '@/hooks/useSettings'
 import { paths } from '@/routes/navigation'
+import { apiClient } from '@/services/apiClient'
 import { toast } from '@/store/toastStore'
 import type { DateFormat, EmailPreference, UserSettings } from '@/types/settings'
 import { templateIds, templates } from '@/utils/resumeTemplates'
@@ -47,6 +51,20 @@ export function SettingsPage() {
   }, [hash])
 
   const saved = (message: string) => toast.success(message)
+  const [exporting, setExporting] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+
+  const exportData = async () => {
+    setExporting(true)
+    try {
+      await apiClient.download('/me/export', `clave-data-${new Date().toISOString().slice(0, 10)}.json`)
+      toast.success('Your data is downloading')
+    } catch {
+      toast.error('Couldn’t export your data', 'Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <>
@@ -142,10 +160,10 @@ export function SettingsPage() {
           <SettingRow
             icon={Download}
             title="Download my data"
-            description="Get a copy of your profile and resumes."
+            description="A JSON file with your account, Career Profile, resumes, applications and settings."
             control={
-              <Button variant="secondary" size="sm" onClick={() => toast.info('Data export isn’t available yet', 'This will be added soon.')}>
-                Request export
+              <Button variant="secondary" size="sm" loading={exporting} onClick={() => void exportData()}>
+                Download
               </Button>
             }
           />
@@ -192,15 +210,26 @@ export function SettingsPage() {
             title="Contact support"
             description="Ask a question or report a problem."
             control={
-              <Button variant="secondary" size="sm" onClick={() => toast.info('Support isn’t connected yet', 'You’ll be able to message us from here soon.')}>
+              <Link to={paths.contact} className={buttonStyles({ variant: 'secondary', size: 'sm' })}>
                 Contact support
-              </Button>
+              </Link>
             }
           />
-          <SettingRow icon={Lightbulb} title="Share feedback" description="Tell us what would make Clave better." control={<Button variant="secondary" size="sm" onClick={() => toast.info('Thanks for the thought', 'Feedback isn’t connected yet.')}>Send feedback</Button>} />
+          <SettingRow icon={Lightbulb} title="Share feedback" description="Tell us what would make Clave better." control={<Button variant="secondary" size="sm" onClick={() => setFeedbackOpen(true)}>Send feedback</Button>} />
+          <SettingRow
+            icon={Scale}
+            title="Legal & policies"
+            description="Privacy, terms, refunds, AI use and how to raise a grievance."
+            control={
+              <Link to={legalPaths.privacy} className="text-sm font-semibold text-primary hover:text-primary-deep">
+                View policies
+              </Link>
+            }
+          />
         </SettingsSection>
       </div>
     </SettingsLayout>
+    {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
     </>
   )
 }

@@ -4,7 +4,7 @@ import type { MatchReasons } from '@/utils/jobMatchReasons'
 
 export function MatchSection({ job, reasons }: { job: Job; reasons: MatchReasons }) {
   return (
-    <section aria-labelledby="match-title" className="flex items-start gap-4 rounded-large border border-primary/25 bg-linear-to-br from-[#cfeadd] via-[#dcf1e7] to-[#eaf7f0] p-4 sm:p-5">
+    <section aria-labelledby="match-title" className="flex items-start gap-4 rounded-large border border-primary/25 bg-linear-to-br from-primary/20 via-primary/12 to-primary/6 p-4 sm:p-5">
       <span className="flex size-11 shrink-0 items-center justify-center rounded-default bg-surface text-primary shadow-xs ring-1 ring-primary/20">
         <Sparkles className="size-5" strokeWidth={1.75} aria-hidden />
       </span>

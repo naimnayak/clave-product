@@ -10,7 +10,7 @@ const variants: Record<BadgeVariant, { badge: string; dot: string }> = {
   warning: { badge: 'bg-warning/10 text-warning ring-1 ring-inset ring-warning/20', dot: 'bg-warning' },
   error: { badge: 'bg-error/10 text-error ring-1 ring-inset ring-error/20', dot: 'bg-error' },
   info: { badge: 'bg-info/10 text-info ring-1 ring-inset ring-info/20', dot: 'bg-info' },
-  match: { badge: 'bg-brand font-semibold text-white shadow-xs', dot: 'bg-white' },
+  match: { badge: 'bg-brand font-semibold text-on-primary shadow-xs', dot: 'bg-white' },
 }
 
 interface BadgeProps {

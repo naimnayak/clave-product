@@ -1,64 +1,91 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { auth } from '@/lib/firebase'
+import { apiClient } from '@/services/apiClient'
+import { linkGoogle, unlinkGoogle } from '@/services/auth.service'
 import { useAuthStore } from '@/store/authStore'
 
 export interface Session {
   id: string
   device: string
-  place: string
+  /** ISO timestamp of the last request from this device. */
   lastActive: string
   current: boolean
 }
 
-interface AccountSettings {
+interface SecurityResponse {
+  providers: string[]
+  passwordUpdatedAt: string | null
   emailVerified: boolean
-  passwordChangedAt: string
+  sessions: Session[]
+}
+
+export interface AccountSettings {
+  emailVerified: boolean
+  hasPassword: boolean
+  /** When the password was last set; null for Google-only accounts. */
+  passwordChangedAt: string | null
   googleConnected: boolean
   sessions: Session[]
 }
 
-/** Mock security state, kept per user in localStorage. The real API would own all of this. */
-const key = (userId: string) => `clave.mock.accountSettings.${userId}`
-const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
-
-const seed = (): AccountSettings => ({
-  emailVerified: true,
-  passwordChangedAt: daysAgo(62),
-  googleConnected: true,
-  sessions: [
-    { id: 'current', device: 'This browser', place: 'Mumbai, India', lastActive: 'Active now', current: true },
-    { id: 'phone', device: 'Safari on iPhone', place: 'Mumbai, India', lastActive: '2 days ago', current: false },
-    { id: 'laptop', device: 'Edge on Windows', place: 'Pune, India', lastActive: '1 week ago', current: false },
-  ],
-})
-
-function read(userId: string): AccountSettings {
-  try {
-    const stored = localStorage.getItem(key(userId))
-    if (stored) return JSON.parse(stored) as AccountSettings
-  } catch {
-    /* fall through to the seed */
+const initial = (): AccountSettings => {
+  const providers = auth.currentUser?.providerData.map((p) => p.providerId) ?? []
+  return {
+    emailVerified: auth.currentUser?.emailVerified ?? useAuthStore.getState().user?.emailVerified ?? false,
+    hasPassword: providers.includes('password'),
+    passwordChangedAt: null,
+    googleConnected: providers.includes('google.com'),
+    sessions: [],
   }
-  return seed()
 }
 
+/** Login & security state from GET /api/me/security (sign-in methods come from Firebase). */
 export function useAccountSettings() {
-  const userId = useAuthStore((state) => state.user?.id ?? '')
-  const [settings, setSettings] = useState(() => read(userId))
+  const [settings, setSettings] = useState<AccountSettings>(initial)
+  const [loading, setLoading] = useState(true)
 
-  const update = useCallback(
-    (patch: Partial<AccountSettings>) => {
-      setSettings((current) => {
-        const next = { ...current, ...patch }
-        try {
-          localStorage.setItem(key(userId), JSON.stringify(next))
-        } catch {
-          /* storage unavailable: the change lasts for this visit */
-        }
-        return next
+  const reload = useCallback(async () => {
+    try {
+      const data = await apiClient.get<SecurityResponse>('/me/security')
+      setSettings({
+        emailVerified: data.emailVerified,
+        hasPassword: data.providers.includes('password'),
+        passwordChangedAt: data.passwordUpdatedAt,
+        googleConnected: data.providers.includes('google.com'),
+        sessions: data.sessions,
       })
+    } catch {
+      /* keep what we have; the section still works with Firebase data */
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  const revokeSession = useCallback(async (id: string) => {
+    await apiClient.delete(`/me/sessions/${encodeURIComponent(id)}`)
+    setSettings((current) => ({ ...current, sessions: current.sessions.filter((s) => s.id !== id) }))
+  }, [])
+
+  const revokeOthers = useCallback(async () => {
+    await apiClient.post('/me/sessions/revoke-others')
+    setSettings((current) => ({ ...current, sessions: current.sessions.filter((s) => s.current) }))
+  }, [])
+
+  const setGoogle = useCallback(
+    async (connect: boolean) => {
+      await (connect ? linkGoogle() : unlinkGoogle())
+      await reload()
     },
-    [userId],
+    [reload],
   )
 
-  return { settings, update }
+  const markPasswordChanged = useCallback(() => {
+    setSettings((current) => ({ ...current, passwordChangedAt: new Date().toISOString() }))
+  }, [])
+
+  return { settings, loading, reload, revokeSession, revokeOthers, setGoogle, markPasswordChanged }
 }

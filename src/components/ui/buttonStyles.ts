@@ -7,7 +7,7 @@ const base =
   'inline-flex shrink-0 items-center justify-center gap-2 rounded-control font-medium whitespace-nowrap transition-all duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 aria-busy:cursor-progress'
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-brand text-white shadow-brand hover:brightness-95 active:brightness-90',
+  primary: 'bg-brand text-on-primary shadow-brand hover:brightness-95 active:brightness-90',
   tint: 'border border-primary/25 bg-primary/5 text-primary-deep hover:bg-primary/10',
   inverse: 'bg-white text-primary-deep shadow-sm hover:bg-white/90',
   outlineDark: 'border border-white/20 bg-white/5 text-white hover:bg-white/10',

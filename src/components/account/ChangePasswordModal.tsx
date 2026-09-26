@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
+import { changePassword } from '@/services/auth.service'
 import { toast } from '@/store/toastStore'
 
-/** Mock: nothing is verified or stored. The real API would check the current password. */
+/** Re-checks the current password with Firebase, then sets the new one. */
 export function ChangePasswordModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -21,7 +22,15 @@ export function ChangePasswordModal({ onClose, onChanged }: { onClose: () => voi
     setErrors(found)
     if (Object.keys(found).length) return
     setSaving(true)
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    try {
+      await changePassword(current, next)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.'
+      if (message.includes('current password')) setErrors({ current: message })
+      else toast.error('Couldn’t change your password', message)
+      setSaving(false)
+      return
+    }
     onChanged()
     toast.success('Password changed')
     onClose()

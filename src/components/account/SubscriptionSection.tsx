@@ -4,14 +4,26 @@ import { PlanDecoration } from '@/components/account/AccountIllustrations'
 import { AccountSection } from '@/components/account/AccountSection'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { useAsyncData } from '@/hooks/useAsyncData'
+import { getSubscription } from '@/services/subscription.service'
+import type { Subscription } from '@/services/subscription.service'
 import { useUpgradeModalStore } from '@/store/upgradeModalStore'
 
 type Panel = 'billing' | null
 
-/** Mock plan. No billing is connected, so billing dialog says so honestly. */
+function usageLine(sub: Subscription): string {
+  if (sub.isUnlimited) return 'Unlimited resumes, AI generation and tailoring.'
+  const credits = sub.singleResumesBalance > 0 ? ` · ${sub.singleResumesBalance} resume credit${sub.singleResumesBalance === 1 ? '' : 's'}` : ''
+  return `${Math.min(sub.resumesCreated, sub.resumesAllowance)} of ${sub.resumesAllowance} free resume${sub.resumesAllowance === 1 ? '' : 's'} used${credits}`
+}
+
+/** Plan and usage come from GET /api/subscriptions/current. Payments aren't connected yet, and billing says so. */
 export function SubscriptionSection() {
   const [panel, setPanel] = useState<Panel>(null)
   const openUpgradeModal = useUpgradeModalStore((s) => s.openUpgradeModal)
+  const subscription = useAsyncData(getSubscription)
+  const sub = subscription.status === 'success' ? subscription.data : null
+  const planName = sub?.isUnlimited ? 'Monthly Unlimited' : 'Free Plan'
 
   return (
     <>
@@ -23,8 +35,10 @@ export function SubscriptionSection() {
               <Crown className="size-5" strokeWidth={1.75} aria-hidden />
             </span>
             <div>
-              <p className="text-base font-semibold text-text">Free Plan</p>
-              <p className="mt-0.5 text-[13px] text-secondary">Build resumes, manage your career profile, and explore opportunities.</p>
+              <p className="text-base font-semibold text-text">{planName}</p>
+              <p className="mt-0.5 text-[13px] text-secondary">
+                {sub ? usageLine(sub) : 'Build resumes, manage your career profile, and explore opportunities.'}
+              </p>
             </div>
           </div>
           <div className="relative flex flex-wrap gap-2">
@@ -48,7 +62,7 @@ export function SubscriptionSection() {
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
             <div>
               <dt className="text-xs text-muted">Current plan</dt>
-              <dd className="mt-0.5 font-medium text-text">Free</dd>
+              <dd className="mt-0.5 font-medium text-text">{sub?.isUnlimited ? 'Monthly Unlimited' : 'Free'}</dd>
             </div>
             <div>
               <dt className="text-xs text-muted">Payment method</dt>

@@ -9,8 +9,8 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { LoadingState } from '@/components/ui/LoadingState'
-import { sampleJobs } from '@/mocks/jobDescriptions.mock'
 import { resumePath } from '@/routes/navigation'
+import { getJobById, getRecommendedJobs, jobToDescription } from '@/services/job.service'
 import { listResumes } from '@/services/resume.service'
 import { createResumeFromDocument, getResumeDocument } from '@/services/resumeDocument.service'
 import { createResumeFromUpload } from '@/services/resumeUpload.service'
@@ -18,6 +18,7 @@ import type { UploadedResumeInfo } from '@/services/resumeUpload.service'
 import { analyzeJobDescription, applyChanges, jobMatch } from '@/services/tailor.service'
 import type { TailorAnalysis } from '@/services/tailor.service'
 import { toast } from '@/store/toastStore'
+import type { Job } from '@/types/job'
 import type { Resume } from '@/types/resume'
 import type { ResumeDocument } from '@/types/resumeDocument'
 import { cn } from '@/utils/cn'
@@ -53,15 +54,60 @@ export function TailorResumeFlow() {
 
   useEffect(() => {
     let active = true
-    listResumes().then((list) => {
-      if (!active) return
-      setResumes(list)
-      setSelectedId((current) => (current && list.some((r) => r.id === current) ? current : (list[0]?.id ?? null)))
-    })
+    listResumes().then(
+      (list) => {
+        if (!active) return
+        setResumes(list)
+        setSelectedId((current) => (current && list.some((r) => r.id === current) ? current : (list[0]?.id ?? null)))
+      },
+      () => {
+        if (!active) return
+        toast.error('Couldn’t load your resumes', 'You can still upload one to tailor.')
+        setResumes([])
+      },
+    )
     return () => {
       active = false
     }
   }, [])
+
+  // "Tailor Resume" on a job listing links here with ?job=<id>: prefill the job step from the listing.
+  const jobParam = params.get('job')
+  useEffect(() => {
+    if (!jobParam) return
+    let active = true
+    getJobById(jobParam)
+      .then((found) => {
+        if (!active || !found) return
+        setTitle((current) => current || found.job.title)
+        setCompany((current) => current || found.job.company)
+        setDescription((current) => current || jobToDescription(found.job, found.detail))
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [jobParam])
+
+  // Shortcut chips on the job step: the user's best-matching real listings.
+  const [matches, setMatches] = useState<Job[]>([])
+  useEffect(() => {
+    let active = true
+    getRecommendedJobs(4)
+      .then((list) => active && setMatches(list))
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const pickMatch = async (job: Job) => {
+    setTitle(job.title)
+    setCompany(job.company)
+    setJdError(undefined)
+    const found = await getJobById(job.id).catch(() => null)
+    if (found) setDescription(jobToDescription(found.job, found.detail))
+  }
 
   const handleTriggerUpload = () => {
     fileInputRef.current?.click()
@@ -213,7 +259,7 @@ export function TailorResumeFlow() {
                 <span aria-hidden className="text-muted">→</span>
                 <span className="text-3xl font-semibold tracking-tight">{matchAfter}%</span>
               </p>
-              <p className="mt-1 text-sm text-secondary">Updates as you choose changes. A mock estimate for now.</p>
+              <p className="mt-1 text-sm text-secondary">Updates as you choose changes. Based on the job’s key terms.</p>
             </div>
 
             <div>
@@ -286,53 +332,48 @@ export function TailorResumeFlow() {
         onBack={() => setStep('select')}
       >
         <div className="w-full">
-          {/* Try a sample job */}
-          <div className="mt-1">
-            <p className="text-[14px] font-semibold text-[#111312]">Try a sample job</p>
+          {/* Shortcut: one of the user's job matches */}
+          {matches.length > 0 && <div className="mt-1">
+            <p className="text-[14px] font-semibold text-text">From your job matches</p>
             <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-              {sampleJobs.map((job) => (
+              {matches.map((job) => (
                 <button
                   key={job.id}
                   type="button"
-                  onClick={() => {
-                    setTitle(job.title)
-                    setCompany(job.company)
-                    setDescription(job.description)
-                    setJdError(undefined)
-                  }}
-                  className="group inline-flex items-center gap-2 rounded-full border border-[#E3E7E5] bg-white px-3.5 py-1.5 text-[13.5px] font-medium text-[#111312] shadow-xs transition-all duration-150 hover:border-[#087F5B] hover:bg-[#087F5B]/[0.04] hover:text-[#087F5B] active:scale-[0.99] cursor-pointer"
+                  onClick={() => void pickMatch(job)}
+                  className="group inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3.5 py-1.5 text-[13.5px] font-medium text-text shadow-xs transition-all duration-150 hover:border-primary hover:bg-primary/[0.04] hover:text-primary active:scale-[0.99] cursor-pointer"
                 >
-                  <FileText className="h-3.5 w-3.5 text-[#8A918E] transition-colors group-hover:text-[#087F5B]" />
+                  <FileText className="h-3.5 w-3.5 text-muted transition-colors group-hover:text-primary" />
                   <span>
                     {job.title} · {job.company}
                   </span>
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Job information */}
           <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
             {/* Job title */}
             <div>
-              <label htmlFor="job-title-input" className="block text-[14px] font-semibold text-[#111312] mb-2">
+              <label htmlFor="job-title-input" className="block text-[14px] font-semibold text-text mb-2">
                 Job title
               </label>
-              <div className="relative flex h-12 w-full items-center rounded-[8px] border border-[#E3E7E5] bg-white shadow-xs transition-all duration-150 hover:border-[#D0D7D4] focus-within:border-[#087F5B] focus-within:ring-1 focus-within:ring-[#087F5B]">
-                <Briefcase className="ml-3.5 h-[18px] w-[18px] shrink-0 text-[#8A918E] pointer-events-none" />
+              <div className="relative flex h-12 w-full items-center rounded-[8px] border border-border bg-surface shadow-xs transition-all duration-150 hover:border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <Briefcase className="ml-3.5 h-[18px] w-[18px] shrink-0 text-muted pointer-events-none" />
                 <input
                   id="job-title-input"
                   type="text"
                   placeholder="e.g. Product Designer"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="h-full w-full bg-transparent pl-3 pr-9 text-[15px] text-[#111312] placeholder:text-[#8A918E] focus:outline-none"
+                  className="h-full w-full bg-transparent pl-3 pr-9 text-[15px] text-text placeholder:text-muted focus:outline-none"
                 />
                 {title && (
                   <button
                     type="button"
                     onClick={() => setTitle('')}
-                    className="absolute right-3 inline-flex size-6 items-center justify-center rounded-full text-[#8A918E] hover:bg-neutral-100 hover:text-[#111312] transition-colors cursor-pointer"
+                    className="absolute right-3 inline-flex size-6 items-center justify-center rounded-full text-muted hover:bg-neutral-100 hover:text-text transition-colors cursor-pointer"
                     aria-label="Clear job title"
                   >
                     <X className="h-4 w-4" />
@@ -343,24 +384,24 @@ export function TailorResumeFlow() {
 
             {/* Company */}
             <div>
-              <label htmlFor="company-name-input" className="block text-[14px] font-semibold text-[#111312] mb-2">
+              <label htmlFor="company-name-input" className="block text-[14px] font-semibold text-text mb-2">
                 Company
               </label>
-              <div className="relative flex h-12 w-full items-center rounded-[8px] border border-[#E3E7E5] bg-white shadow-xs transition-all duration-150 hover:border-[#D0D7D4] focus-within:border-[#087F5B] focus-within:ring-1 focus-within:ring-[#087F5B]">
-                <Building2 className="ml-3.5 h-[18px] w-[18px] shrink-0 text-[#8A918E] pointer-events-none" />
+              <div className="relative flex h-12 w-full items-center rounded-[8px] border border-border bg-surface shadow-xs transition-all duration-150 hover:border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <Building2 className="ml-3.5 h-[18px] w-[18px] shrink-0 text-muted pointer-events-none" />
                 <input
                   id="company-name-input"
                   type="text"
                   placeholder="e.g. Kite & Co."
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  className="h-full w-full bg-transparent pl-3 pr-9 text-[15px] text-[#111312] placeholder:text-[#8A918E] focus:outline-none"
+                  className="h-full w-full bg-transparent pl-3 pr-9 text-[15px] text-text placeholder:text-muted focus:outline-none"
                 />
                 {company && (
                   <button
                     type="button"
                     onClick={() => setCompany('')}
-                    className="absolute right-3 inline-flex size-6 items-center justify-center rounded-full text-[#8A918E] hover:bg-neutral-100 hover:text-[#111312] transition-colors cursor-pointer"
+                    className="absolute right-3 inline-flex size-6 items-center justify-center rounded-full text-muted hover:bg-neutral-100 hover:text-text transition-colors cursor-pointer"
                     aria-label="Clear company name"
                   >
                     <X className="h-4 w-4" />
@@ -372,21 +413,21 @@ export function TailorResumeFlow() {
 
           {/* Job description */}
           <div className="mt-6">
-            <label htmlFor="job-description-input" className="block text-[14px] font-semibold text-[#111312] mb-2">
+            <label htmlFor="job-description-input" className="block text-[14px] font-semibold text-text mb-2">
               Job description
             </label>
             <div
               className={cn(
-                'relative flex flex-col rounded-[12px] border bg-white shadow-xs transition-all duration-150',
+                'relative flex flex-col rounded-[12px] border bg-surface shadow-xs transition-all duration-150',
                 jdError
                   ? 'border-error focus-within:border-error focus-within:ring-1 focus-within:ring-error'
-                  : 'border-[#E3E7E5] hover:border-[#D0D7D4] focus-within:border-[#087F5B] focus-within:ring-1 focus-within:ring-[#087F5B]'
+                  : 'border-border hover:border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary'
               )}
             >
               {/* Top utility row */}
-              <div className="flex h-11 items-center justify-between border-b border-[#F0F2F1] px-4">
-                <div className="flex items-center gap-2 text-[14px] text-[#626967]">
-                  <FileText className="h-4 w-4 text-[#8A918E]" />
+              <div className="flex h-11 items-center justify-between border-b border-background px-4">
+                <div className="flex items-center gap-2 text-[14px] text-secondary">
+                  <FileText className="h-4 w-4 text-muted" />
                   <span>Paste job description here...</span>
                 </div>
                 <button
@@ -396,9 +437,9 @@ export function TailorResumeFlow() {
                     setJdError(undefined)
                     textareaRef.current?.focus()
                   }}
-                  className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-[#626967] hover:bg-neutral-100 hover:text-[#111312] transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-secondary hover:bg-neutral-100 hover:text-text transition-colors cursor-pointer"
                 >
-                  <Trash2 className="h-3.5 w-3.5 text-[#8A918E]" />
+                  <Trash2 className="h-3.5 w-3.5 text-muted" />
                   <span>Clear</span>
                 </button>
               </div>
@@ -409,19 +450,19 @@ export function TailorResumeFlow() {
                 className="relative min-h-[300px] p-4 flex-1 cursor-text"
               >
                 {!description && (
-                  <div className="pointer-events-none absolute inset-x-4 top-4 select-none space-y-3.5 pt-0.5 text-[14px] text-[#8A918E]">
-                    <p className="text-[#8A918E]">Paste the full job description here...</p>
-                    <div className="space-y-2 pt-1 text-[13.5px] text-[#8A918E]">
+                  <div className="pointer-events-none absolute inset-x-4 top-4 select-none space-y-3.5 pt-0.5 text-[14px] text-muted">
+                    <p className="text-muted">Paste the full job description here...</p>
+                    <div className="space-y-2 pt-1 text-[13.5px] text-muted">
                       <div className="flex items-center gap-2">
-                        <Check className="h-3.5 w-3.5 shrink-0 text-[#8A918E]" />
+                        <Check className="h-3.5 w-3.5 shrink-0 text-muted" />
                         <span>Include responsibilities, requirements, and preferred skills</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Check className="h-3.5 w-3.5 shrink-0 text-[#8A918E]" />
+                        <Check className="h-3.5 w-3.5 shrink-0 text-muted" />
                         <span>The more details you provide, the better the analysis</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Check className="h-3.5 w-3.5 shrink-0 text-[#8A918E]" />
+                        <Check className="h-3.5 w-3.5 shrink-0 text-muted" />
                         <span>You can also try one of the sample jobs above</span>
                       </div>
                     </div>
@@ -438,11 +479,11 @@ export function TailorResumeFlow() {
                     setDescription(e.target.value)
                     if (jdError) setJdError(undefined)
                   }}
-                  className="relative z-10 w-full min-h-[260px] resize-y bg-transparent text-[14px] leading-relaxed text-[#111312] focus:outline-none"
+                  className="relative z-10 w-full min-h-[260px] resize-y bg-transparent text-[14px] leading-relaxed text-text focus:outline-none"
                 />
 
                 {/* Character counter */}
-                <div className="pointer-events-none absolute right-4 bottom-3 z-10 text-xs text-[#8A918E]">
+                <div className="pointer-events-none absolute right-4 bottom-3 z-10 text-xs text-muted">
                   {description.length.toLocaleString()}/10,000
                 </div>
               </div>
@@ -462,7 +503,7 @@ export function TailorResumeFlow() {
               type="button"
               disabled={isAnalyzing}
               onClick={analyze}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#087F5B] px-6 text-[15px] font-medium text-white shadow-xs transition-all duration-150 hover:bg-[#056B4D] active:scale-[0.99] disabled:opacity-75 disabled:pointer-events-none cursor-pointer"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-[8px] bg-primary px-6 text-[15px] font-medium text-on-primary shadow-xs transition-all duration-150 hover:bg-primary-deep active:scale-[0.99] disabled:opacity-75 disabled:pointer-events-none cursor-pointer"
             >
               {isAnalyzing ? (
                 <>
@@ -477,8 +518,8 @@ export function TailorResumeFlow() {
               )}
             </button>
 
-            <div className="flex items-center gap-1.5 text-xs text-[#626967]">
-              <Info className="h-3.5 w-3.5 text-[#8A918E] shrink-0" />
+            <div className="flex items-center gap-1.5 text-xs text-secondary">
+              <Info className="h-3.5 w-3.5 text-muted shrink-0" />
               <span>Clave will analyze this job and show how it matches with your resume.</span>
             </div>
           </div>
@@ -506,9 +547,9 @@ export function TailorResumeFlow() {
       <div className="w-full space-y-6">
         {/* Upload an existing resume option above saved resume cards */}
         {isUploading ? (
-          <div className="rounded-xl border border-dashed border-[#087F5B]/40 bg-[#087F5B]/[0.02] p-5">
+          <div className="rounded-xl border border-dashed border-primary/40 bg-primary/[0.02] p-5">
             <div className="flex items-center gap-3.5">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[#087F5B]/20 bg-[#E6F4EA] text-[#087F5B] animate-pulse">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary animate-pulse">
                 <Upload className="size-5" aria-hidden />
               </div>
               <div className="min-w-0 flex-1">
@@ -525,7 +566,7 @@ export function TailorResumeFlow() {
                 <button
                   type="button"
                   onClick={handleTriggerUpload}
-                  className="font-medium text-[#087F5B] hover:underline"
+                  className="font-medium text-primary hover:underline"
                 >
                   Replace file
                 </button>
@@ -540,8 +581,8 @@ export function TailorResumeFlow() {
               </div>
             </div>
 
-            <article className="group relative flex items-start gap-4 rounded-xl border border-border bg-surface p-4 text-left transition-all duration-150 hover:border-[#087F5B]/50 hover:bg-[#087F5B]/[0.015] hover:shadow-xs">
-              <div className="flex h-[100px] w-[80px] shrink-0 flex-col items-center justify-center rounded-md border border-border/80 bg-background text-[#087F5B] shadow-2xs">
+            <article className="group relative flex items-start gap-4 rounded-xl border border-border bg-surface p-4 text-left transition-all duration-150 hover:border-primary/50 hover:bg-primary/[0.015] hover:shadow-xs">
+              <div className="flex h-[100px] w-[80px] shrink-0 flex-col items-center justify-center rounded-md border border-border/80 bg-background text-primary shadow-2xs">
                 <FileText className="size-8" aria-hidden />
                 <span className="mt-1 text-[10px] font-bold uppercase tracking-wider text-muted">
                   {uploadedResume.fileType}
@@ -552,7 +593,7 @@ export function TailorResumeFlow() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="truncate text-sm font-semibold text-text">{uploadedResume.fileName}</h3>
-                    <span className="inline-flex shrink-0 items-center rounded-full bg-[#E6F4EA] px-2 py-0.5 text-[11px] font-medium text-[#087F5B]">
+                    <span className="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
                       Uploaded
                     </span>
                   </div>
@@ -562,14 +603,14 @@ export function TailorResumeFlow() {
                     <span>·</span>
                     <span>{uploadedResume.fileSizeFormatted}</span>
                     <span>·</span>
-                    <span className="inline-flex items-center gap-1 font-medium text-[#087F5B]">
+                    <span className="inline-flex items-center gap-1 font-medium text-primary">
                       <CheckCircle className="size-3" aria-hidden /> Ready for tailoring
                     </span>
                   </div>
 
                   {uploadedResume.atsScore !== undefined && (
                     <div className="mt-2.5">
-                      <span className="inline-flex items-center gap-1 rounded-full border border-[#087F5B]/20 bg-[#E6F4EA] px-2 py-0.5 text-[11px] font-semibold text-[#087F5B]">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
                         <CheckCircle className="size-3" aria-hidden />
                         {uploadedResume.atsScore} ATS
                       </span>
@@ -587,7 +628,7 @@ export function TailorResumeFlow() {
                     type="button"
                     disabled={loadingResumeId !== null}
                     onClick={() => void startTailoring(uploadedResume.id, uploadedResume.document)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#087F5B] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition-all hover:bg-[#066c4d] hover:shadow-xs group-hover:bg-[#066c4d] focus:outline-none focus:ring-2 focus:ring-[#087F5B] focus:ring-offset-2 disabled:opacity-50"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-on-primary shadow-2xs transition-all hover:bg-primary-deep hover:shadow-xs group-hover:bg-primary-deep focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50"
                   >
                     {loadingResumeId === uploadedResume.id ? 'Loading…' : (
                       <>
@@ -602,10 +643,10 @@ export function TailorResumeFlow() {
           </div>
         ) : (
           /* Empty upload option banner above saved cards */
-          <div className="rounded-xl border border-dashed border-border/80 bg-surface/50 p-4 sm:p-5 transition-colors hover:border-[#087F5B]/40">
+          <div className="rounded-xl border border-dashed border-border/80 bg-surface/50 p-4 sm:p-5 transition-colors hover:border-primary/40">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3.5">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#087F5B]/20 bg-[#E6F4EA] text-[#087F5B]">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
                   <Upload className="size-5" aria-hidden />
                 </div>
                 <div>
@@ -620,7 +661,7 @@ export function TailorResumeFlow() {
                 <button
                   type="button"
                   onClick={handleTriggerUpload}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[#087F5B]/40 bg-surface px-4 py-2 text-xs sm:text-sm font-medium text-[#087F5B] transition-colors hover:bg-[#087F5B]/5 hover:border-[#087F5B]"
+                  className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-surface px-4 py-2 text-xs sm:text-sm font-medium text-primary transition-colors hover:bg-primary/5 hover:border-primary"
                 >
                   <Upload className="size-4" aria-hidden />
                   Upload Resume
@@ -641,7 +682,7 @@ export function TailorResumeFlow() {
               return (
                 <article
                   key={resume.id}
-                  className="group relative flex items-start gap-4 rounded-xl border border-border bg-surface p-4 text-left transition-all duration-150 hover:border-[#087F5B]/50 hover:bg-[#087F5B]/[0.015] hover:shadow-xs"
+                  className="group relative flex items-start gap-4 rounded-xl border border-border bg-surface p-4 text-left transition-all duration-150 hover:border-primary/50 hover:bg-primary/[0.015] hover:shadow-xs"
                 >
                   {/* Thumbnail preview */}
                   <div className="h-[118px] w-[88px] shrink-0 overflow-hidden rounded-md border border-border/70 bg-tint p-1">
@@ -654,7 +695,7 @@ export function TailorResumeFlow() {
                       <div className="flex items-center gap-2">
                         <h3 className="truncate text-sm font-semibold text-text">{resume.name}</h3>
                         {isBestFit && (
-                          <span className="inline-flex shrink-0 items-center rounded-full bg-[#E6F4EA] px-2 py-0.5 text-[11px] font-medium text-[#087F5B]">
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
                             Best fit
                           </span>
                         )}
@@ -663,7 +704,7 @@ export function TailorResumeFlow() {
 
                       <div className="mt-2.5">
                         {resume.atsScore >= 75 ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-[#087F5B]/20 bg-[#E6F4EA] px-2 py-0.5 text-[11px] font-semibold text-[#087F5B]">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
                             <CheckCircle className="size-3" aria-hidden />
                             {resume.atsScore} ATS
                           </span>
@@ -695,7 +736,7 @@ export function TailorResumeFlow() {
                         type="button"
                         disabled={loadingResumeId !== null}
                         onClick={() => void startTailoring(resume.id)}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#087F5B] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition-all hover:bg-[#066c4d] hover:shadow-xs group-hover:bg-[#066c4d] focus:outline-none focus:ring-2 focus:ring-[#087F5B] focus:ring-offset-2 disabled:opacity-50"
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-on-primary shadow-2xs transition-all hover:bg-primary-deep hover:shadow-xs group-hover:bg-primary-deep focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50"
                       >
                         {isLoading ? 'Loading…' : (
                           <>

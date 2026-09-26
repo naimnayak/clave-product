@@ -15,9 +15,11 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { useResumeQuery } from '@/hooks/useResumeQuery'
 import { useResumes } from '@/hooks/useResumes'
 import { paths, resumePath } from '@/routes/navigation'
+import { getResumeDocument } from '@/services/resumeDocument.service'
 import { toast } from '@/store/toastStore'
 import type { Resume } from '@/types/resume'
 import { cn } from '@/utils/cn'
+import { printResume } from '@/utils/printResume'
 import { resumeStatus } from '@/utils/resumeStatus'
 
 const DAY = 86_400_000
@@ -38,6 +40,17 @@ export function ResumesPage() {
   const [deleting, setDeleting] = useState<Resume | null>(null)
 
   const resumes = state.status === 'ready' ? state.resumes : []
+
+  const downloadPdf = async (resume: Resume) => {
+    try {
+      const doc = await getResumeDocument(resume.id)
+      if (!doc) throw new Error('This resume no longer exists.')
+      toast.info('Choose “Save as PDF”', 'Pick it as the destination in the print dialog to download your resume.')
+      await printResume(doc)
+    } catch (error) {
+      toast.error('Couldn’t prepare the PDF', error instanceof Error ? error.message : 'Please try again.')
+    }
+  }
   const needle = query.trim().toLowerCase()
   const visible = resumes
     .filter(
@@ -121,7 +134,7 @@ export function ResumesPage() {
                     toast.success('Resume duplicated', `${resume.name} (Copy)`)
                   }}
                   onTailor={() => navigate(`${paths.tailorResume}?resume=${resume.id}`)}
-                  onDownload={() => toast.info('PDF download is coming soon', 'Exporting resumes isn’t available yet.')}
+                  onDownload={() => void downloadPdf(resume)}
                   onDelete={() => setDeleting(resume)}
                 />
               </li>

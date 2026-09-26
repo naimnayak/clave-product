@@ -14,13 +14,13 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface Props {
   emailVerified: boolean
-  onEmailVerified: (verified: boolean) => void
 }
 
-export function ProfileInformation({ emailVerified, onEmailVerified }: Props) {
+export function ProfileInformation({ emailVerified }: Props) {
   const user = useAuthStore((state) => state.user)
   const updateUser = useAuthStore((state) => state.updateUser)
   const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [photoOpen, setPhotoOpen] = useState(false)
   const [name, setName] = useState(user?.name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
@@ -35,15 +35,18 @@ export function ProfileInformation({ emailVerified, onEmailVerified }: Props) {
     setEditing(true)
   }
 
-  const save = () => {
+  const save = async () => {
     const next = { name: name.trim() ? undefined : 'Enter your name.', email: emailPattern.test(email.trim()) ? undefined : 'Enter a valid email address.' }
     setErrors(next)
     if (next.name || next.email) return
-    const emailChanged = email.trim().toLowerCase() !== user.email
-    updateUser({ name: name.trim(), email: email.trim().toLowerCase() })
+    const newEmail = email.trim().toLowerCase()
+    const emailChanged = newEmail !== user.email
+    setSaving(true)
+    const saved = await updateUser({ name: name.trim(), email: newEmail })
+    setSaving(false)
+    if (!saved) return
     if (emailChanged) {
-      onEmailVerified(false)
-      toast.success('Profile updated', 'We sent a verification link to your new email (mock).')
+      toast.success('Check your inbox', `We sent a confirmation link to ${newEmail}. Your email changes once you open it.`)
     } else {
       toast.success('Profile updated')
     }
@@ -96,7 +99,7 @@ export function ProfileInformation({ emailVerified, onEmailVerified }: Props) {
             className="flex flex-1 flex-col gap-3"
             onSubmit={(event) => {
               event.preventDefault()
-              save()
+              void save()
             }}
           >
             <Input label="Full name" value={editing ? name : user.name} readOnly={!editing} error={errors.name} onChange={(event) => setName(event.target.value)} />
@@ -106,7 +109,7 @@ export function ProfileInformation({ emailVerified, onEmailVerified }: Props) {
                 <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" size="sm">
+                <Button type="submit" size="sm" loading={saving}>
                   Save changes
                 </Button>
               </div>

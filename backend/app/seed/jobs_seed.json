@@ -1,0 +1,403 @@
+{
+  "jobs": [
+    {
+      "id": "job_product_designer_kite",
+      "title": "Product Designer",
+      "company": "Kite & Co.",
+      "location": "Bengaluru · Hybrid",
+      "city": "Bengaluru",
+      "workType": "hybrid",
+      "level": "junior",
+      "roleType": "Product Design",
+      "experience": "1–3 yrs",
+      "matchPercent": 94,
+      "skills": [
+        "Figma",
+        "User Research",
+        "Design Systems",
+        "Prototyping"
+      ],
+      "postedDaysAgo": 2,
+      "salary": "₹12L – ₹18L",
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Kite & Co. builds payments tools for small businesses. As a Product Designer you will own the design of our merchant app end to end, from early research and flows through to polished, developer-ready screens. You will work in a small cross-functional squad with a product manager and three engineers, and your work will ship to thousands of merchants every week.",
+        "responsibilities": [
+          "Turn research findings into clear flows, wireframes and high-fidelity prototypes",
+          "Run usability sessions and use what you learn to shape the roadmap",
+          "Contribute to and evolve our design system in Figma",
+          "Partner with engineers through handoff and review"
+        ],
+        "requirements": [
+          "1–3 years designing digital products, internships included",
+          "A portfolio showing your process from problem to shipped solution",
+          "Strong Figma skills, including components and prototyping",
+          "Comfort presenting your work and taking feedback"
+        ],
+        "niceToHave": [
+          "Experience with fintech or payments products",
+          "Familiarity with product analytics and A/B testing"
+        ],
+        "stretchSkill": "product analytics"
+      },
+      "recommendedRank": 0
+    },
+    {
+      "id": "job_ux_designer_meridian",
+      "title": "UX Designer",
+      "company": "Meridian Health",
+      "location": "Remote · India",
+      "city": "Remote",
+      "workType": "remote",
+      "level": "junior",
+      "roleType": "UX/UI Design",
+      "experience": "1–3 yrs",
+      "matchPercent": 91,
+      "skills": [
+        "Wireframing",
+        "Usability Testing",
+        "Accessibility",
+        "Figma"
+      ],
+      "postedDaysAgo": 4,
+      "salary": "₹10L – ₹15L",
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Meridian Health is improving how patients book, prepare for and follow up on care. The UX Designer will shape patient-facing experiences across web and mobile, working closely with clinicians and researchers to keep every flow clear, calm and accessible.",
+        "responsibilities": [
+          "Map patient journeys and design flows for scheduling, reminders and records",
+          "Create wireframes and interactive prototypes for testing",
+          "Document decisions in our design system and accessibility guidelines",
+          "Collaborate with clinicians to validate designs against real workflows"
+        ],
+        "requirements": [
+          "1–3 years of UX or product design experience",
+          "A working knowledge of accessibility standards (WCAG)",
+          "Experience planning and running usability tests",
+          "Clear written and verbal communication"
+        ],
+        "niceToHave": [
+          "Experience in healthcare or another regulated space",
+          "Basic HTML and CSS"
+        ],
+        "stretchSkill": "service design"
+      },
+      "recommendedRank": 1
+    },
+    {
+      "id": "job_product_design_intern_finlo",
+      "title": "Product Design Intern",
+      "company": "Finlo",
+      "location": "Mumbai · Hybrid",
+      "city": "Mumbai",
+      "workType": "hybrid",
+      "level": "internship",
+      "roleType": "Product Design",
+      "experience": "Internship",
+      "matchPercent": 89,
+      "skills": [
+        "Figma",
+        "Prototyping",
+        "User Flows"
+      ],
+      "postedDaysAgo": 1,
+      "salary": "₹30K – ₹40K/mo",
+      "detail": {
+        "jobType": "Internship",
+        "about": "Finlo is a UPI-first payments startup. This six-month internship puts you inside our product team, designing real features that ship. You will be mentored by a senior designer and get hands-on experience across research, prototyping and design systems.",
+        "responsibilities": [
+          "Design screens and flows for payments and onboarding features",
+          "Build and maintain reusable components in Figma",
+          "Support usability testing and summarise insights",
+          "Present your work in weekly design reviews"
+        ],
+        "requirements": [
+          "Currently studying, or recently graduated in design, HCI or a related field",
+          "A portfolio with two or more case studies",
+          "Working knowledge of Figma and prototyping"
+        ],
+        "niceToHave": [
+          "Experience with mobile app design",
+          "Interest in fintech"
+        ],
+        "stretchSkill": "motion design"
+      },
+      "recommendedRank": 2
+    },
+    {
+      "id": "job_uiux_designer_northwind",
+      "title": "UI/UX Designer",
+      "company": "Northwind Labs",
+      "location": "Pune · On-site",
+      "city": "Pune",
+      "workType": "onsite",
+      "level": "entry",
+      "roleType": "UX/UI Design",
+      "experience": "0–2 yrs",
+      "matchPercent": 86,
+      "skills": [
+        "Figma",
+        "Visual Design",
+        "Prototyping",
+        "Design Systems"
+      ],
+      "postedDaysAgo": 6,
+      "salary": "₹8L – ₹12L",
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Northwind Labs makes operations software for logistics teams. We need a UI/UX Designer who cares about craft and clarity, someone who can make dense workflows feel simple and who enjoys working closely with engineers in the same office.",
+        "responsibilities": [
+          "Design dashboards, tables and workflow tools that stay readable at scale",
+          "Prototype interactions and validate them with internal users",
+          "Apply and extend our visual design language",
+          "Work with developers to keep implementation faithful to the design"
+        ],
+        "requirements": [
+          "0–2 years in UI or UX design",
+          "Strong visual design fundamentals: type, layout and colour",
+          "Proficiency in Figma",
+          "Willingness to work on-site in Pune"
+        ],
+        "niceToHave": [
+          "Experience designing data-heavy interfaces",
+          "Familiarity with design systems"
+        ],
+        "stretchSkill": "data visualisation"
+      },
+      "recommendedRank": 3
+    },
+    {
+      "id": "job_junior_designer_orbit",
+      "title": "Junior Product Designer",
+      "company": "Orbit Health",
+      "location": "Remote · India",
+      "city": "Remote",
+      "workType": "remote",
+      "level": "entry",
+      "roleType": "Product Design",
+      "experience": "0–1 yrs",
+      "matchPercent": 84,
+      "skills": [
+        "Design Systems",
+        "Figma",
+        "User Research"
+      ],
+      "postedDaysAgo": 9,
+      "salary": "₹7L – ₹10L",
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Orbit Health is a remote-first team building tools for chronic-care coaching. As a Junior Product Designer you will join a small, friendly design team, take on well-scoped projects from day one and grow quickly with regular mentoring.",
+        "responsibilities": [
+          "Design features from problem framing through to final UI",
+          "Keep our design system consistent and well documented",
+          "Join user interviews and help turn notes into insights",
+          "Share progress openly with the wider product team"
+        ],
+        "requirements": [
+          "0–1 years of professional design experience, or strong project work",
+          "Good understanding of design systems and component thinking",
+          "Solid Figma skills",
+          "Comfort working remotely and asynchronously"
+        ],
+        "niceToHave": [
+          "Experience with health or wellness products",
+          "Some exposure to research methods"
+        ],
+        "stretchSkill": "product analytics"
+      },
+      "recommendedRank": 4
+    },
+    {
+      "id": "job_frontend_lumen",
+      "title": "Frontend Developer",
+      "company": "Lumen Labs",
+      "location": "Mumbai · Hybrid",
+      "city": "Mumbai",
+      "workType": "hybrid",
+      "level": "entry",
+      "roleType": "Frontend Engineering",
+      "experience": "0–2 yrs",
+      "matchPercent": 78,
+      "skills": [
+        "React",
+        "TypeScript",
+        "Figma"
+      ],
+      "postedDaysAgo": 12,
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Lumen Labs is building an analytics dashboard used by product teams. The Frontend Developer will turn designs into fast, accessible React interfaces and work closely with designers to get the details right.",
+        "responsibilities": [
+          "Build and maintain React and TypeScript components",
+          "Translate Figma designs into pixel-accurate, responsive UI",
+          "Write tests and keep performance in check",
+          "Review code and share knowledge with the team"
+        ],
+        "requirements": [
+          "0–2 years of frontend experience, internships included",
+          "Solid React and TypeScript fundamentals",
+          "An eye for design and comfort reading Figma files"
+        ],
+        "niceToHave": [
+          "Experience with design systems in code",
+          "Testing with Jest or Playwright"
+        ],
+        "stretchSkill": "testing"
+      },
+      "recommendedRank": 5
+    },
+    {
+      "id": "job_assoc_designer_lumen",
+      "title": "Associate Product Designer",
+      "company": "Lumen Labs",
+      "location": "Bengaluru · Hybrid",
+      "city": "Bengaluru",
+      "workType": "hybrid",
+      "level": "entry",
+      "roleType": "Product Design",
+      "experience": "0–2 yrs",
+      "matchPercent": 81,
+      "skills": [
+        "Figma",
+        "Prototyping",
+        "Usability Testing"
+      ],
+      "postedDaysAgo": 15,
+      "salary": "₹9L – ₹13L",
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Lumen Labs is hiring an Associate Product Designer to help shape its analytics dashboard. You will design features alongside a senior designer, run usability sessions and ship improvements every sprint.",
+        "responsibilities": [
+          "Design new dashboard features from flow to high-fidelity",
+          "Prototype and test ideas with real users",
+          "Support the design system with new components"
+        ],
+        "requirements": [
+          "0–2 years of product design experience",
+          "Strong Figma and prototyping skills",
+          "Experience with usability testing"
+        ],
+        "niceToHave": [
+          "Experience with analytics or B2B tools"
+        ],
+        "stretchSkill": "data visualisation"
+      },
+      "recommendedRank": -1
+    },
+    {
+      "id": "job_design_systems_kite",
+      "title": "Design Systems Designer",
+      "company": "Kite & Co.",
+      "location": "Remote · India",
+      "city": "Remote",
+      "workType": "remote",
+      "level": "mid",
+      "roleType": "Product Design",
+      "experience": "3+ yrs",
+      "matchPercent": 72,
+      "skills": [
+        "Design Systems",
+        "Figma",
+        "Accessibility"
+      ],
+      "postedDaysAgo": 20,
+      "salary": "₹22L – ₹30L",
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Kite & Co. is investing in a shared design system used by four product teams. You will own its components, documentation and accessibility standards, and help teams adopt it.",
+        "responsibilities": [
+          "Design, document and maintain the component library",
+          "Set accessibility standards and audit against them",
+          "Partner with engineers on tokens and implementation"
+        ],
+        "requirements": [
+          "3+ years in product or systems design",
+          "Deep Figma expertise, including variables and components",
+          "Strong knowledge of accessibility"
+        ],
+        "niceToHave": [
+          "Experience with design tokens",
+          "Prior experience leading a system"
+        ],
+        "stretchSkill": "design tokens"
+      },
+      "recommendedRank": -1
+    },
+    {
+      "id": "job_ux_researcher_meridian",
+      "title": "UX Researcher",
+      "company": "Meridian Health",
+      "location": "Mumbai · On-site",
+      "city": "Mumbai",
+      "workType": "onsite",
+      "level": "junior",
+      "roleType": "UX/UI Design",
+      "experience": "1–3 yrs",
+      "matchPercent": 68,
+      "skills": [
+        "User Research",
+        "Usability Testing",
+        "Analytics"
+      ],
+      "postedDaysAgo": 24,
+      "detail": {
+        "jobType": "Full-time",
+        "about": "Meridian Health needs a UX Researcher to understand patients and clinicians and bring their needs into product decisions. You will plan studies, run sessions and turn findings into clear recommendations.",
+        "responsibilities": [
+          "Plan and run interviews, surveys and usability tests",
+          "Synthesise findings into insights and recommendations",
+          "Partner with design and product on research roadmaps"
+        ],
+        "requirements": [
+          "1–3 years in UX research or a related field",
+          "Experience with qualitative and mixed methods",
+          "Strong synthesis and storytelling skills"
+        ],
+        "niceToHave": [
+          "Experience with analytics tools",
+          "Healthcare research experience"
+        ],
+        "stretchSkill": "quantitative research"
+      },
+      "recommendedRank": -1
+    }
+  ],
+  "companies": {
+    "Kite & Co.": {
+      "description": "Payments and invoicing tools that help small businesses get paid faster.",
+      "industry": "Fintech",
+      "size": "50–200 employees",
+      "location": "Bengaluru, India"
+    },
+    "Meridian Health": {
+      "description": "Patient-first software for booking, preparing for and following up on care.",
+      "industry": "Healthcare",
+      "size": "200–500 employees",
+      "location": "Mumbai, India"
+    },
+    "Finlo": {
+      "description": "A money-management app that makes everyday saving and spending simple.",
+      "industry": "Fintech",
+      "size": "10–50 employees",
+      "location": "Mumbai, India"
+    },
+    "Northwind Labs": {
+      "description": "A product studio building logistics and operations software for growing teams.",
+      "industry": "Software",
+      "size": "50–200 employees",
+      "location": "Pune, India"
+    },
+    "Orbit Health": {
+      "description": "Remote-first care coordination for people managing long-term conditions.",
+      "industry": "Healthcare",
+      "size": "50–200 employees",
+      "location": "Remote, India"
+    },
+    "Lumen Labs": {
+      "description": "Design-led engineering for analytics and education products.",
+      "industry": "Software",
+      "size": "10–50 employees",
+      "location": "Bengaluru, India"
+    }
+  }
+}

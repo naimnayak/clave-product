@@ -7,7 +7,7 @@ import { toast } from '@/store/toastStore'
 
 const PHRASE = 'DELETE'
 
-/** Deleting needs a typed confirmation. Mock: removes the local account and signs out. */
+/** Deleting needs a typed confirmation. DELETE /api/me removes all Clave data and the Firebase login. */
 export function DeleteAccountModal({ onClose }: { onClose: () => void }) {
   const deleteAccount = useAuthStore((state) => state.deleteAccount)
   const [typed, setTyped] = useState('')
@@ -30,8 +30,13 @@ export function DeleteAccountModal({ onClose }: { onClose: () => void }) {
             disabled={typed !== PHRASE}
             onClick={async () => {
               setBusy(true)
-              await deleteAccount()
-              toast.success('Account deleted')
+              try {
+                await deleteAccount()
+                toast.success('Account deleted')
+              } catch (error) {
+                toast.error('Couldn’t delete your account', error instanceof Error ? error.message : 'Please try again.')
+                setBusy(false)
+              }
             }}
           >
             Delete account

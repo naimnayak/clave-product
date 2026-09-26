@@ -1,323 +1,99 @@
-# 03 — Pydantic Schemas (FastAPI & Validation)
+# 03 · Pydantic Schemas
 
-This document provides production-ready Pydantic v2 schemas that match the exact data shapes expected by the Clave React frontend.
+Shared models live in `backend/app/schemas/`; endpoint-specific request models are defined at the top of each `app/api/*.py` file. AI output models (private, prefixed `_`) live in `app/services/ai_tasks.py` and `job_ingest.py` (see 05).
 
-> **Key Rule**: The frontend uses `camelCase`. Use Pydantic's `populate_by_name = True` and camelCase aliasing so that FastAPI consumes and produces camelCase JSON seamlessly while Python internal code remains idiomatic `snake_case`.
+## Base types (`schemas/common.py`)
 
----
+`CamelModel` (Pydantic v2): `alias_generator=to_camel`, `populate_by_name=True`, `extra="ignore"`. It accepts camelCase or snake_case input, ignores unknown fields, and `dump()` emits camelCase.
 
-## 1. Base Envelope & Configuration
+| Alias | Constraint |
+|---|---|
+| EntryId | str ≤ 100 |
+| ShortText | str ≤ 300 |
+| Text | str ≤ 5,000 |
+| LongText | str ≤ 20,000 |
+| Tags | list (≤ 100) of str ≤ 120 |
 
-```python
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Generic, TypeVar, Optional, List
-from datetime import datetime
-
-T = TypeVar("T")
-
-def to_camel(string: str) -> str:
-    components = string.split('_')
-    return components[0] + ''.join(x.title() for x in components[1:])
-
-class ClaveBaseModel(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        from_attributes=True,
-    )
-
-class ApiResponse(ClaveBaseModel, Generic[T]):
-    data: T
-    message: Optional[str] = "Success"
-
-class ApiErrorDetail(ClaveBaseModel):
-    code: str
-    message: str
-    details: Optional[dict] = None
-
-class ApiErrorResponse(ClaveBaseModel):
-    error: ApiErrorDetail
-```
-
----
-
-## 2. User & Authentication Schemas
+## Career Profile (`schemas/profile.py`, mirrors `src/types/profile.ts`)
 
 ```python
-class UserResponse(ClaveBaseModel):
-    id: str
-    email: str
-    name: str
-    avatar: Optional[str] = None
-    is_active: bool = True
-    created_at: datetime
-    updated_at: datetime
-
-class UserUpdateRequest(ClaveBaseModel):
-    name: Optional[str] = None
-    avatar: Optional[str] = None
-
-class RegisterRequest(ClaveBaseModel):
-    name: str = Field(..., min_length=2, max_length=100)
-    email: str = Field(..., max_length=255)
-    password: str = Field(..., min_length=8)
-
-class LoginRequest(ClaveBaseModel):
-    email: str
-    password: str
-
-class AuthTokenResponse(ClaveBaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    user: UserResponse
+ProfileData:
+  name, email, phone, location: ShortText; summary: Text
+  targetRoles: Tags
+  experienceLevel: "student" | "fresher" | "early" | "experienced" | None
+  experience: list[ExperienceEntry] (≤50)      # id, role, company, location, period, summary
+  education: list[EducationEntry] (≤30)        # id, institution, degree, period, details
+  projects: list[ProjectEntry] (≤50)           # id, name, description, technologies: Tags, link
+  skills: Tags
+  certifications: list[CertificationEntry] (≤50)  # id, name, issuer, year
+  achievements: list[Text] (≤50)
+  links: list[LinkEntry] (≤30)                 # id, label, url
+  workModes: list["remote"|"hybrid"|"onsite"] (≤3)
+  preferredLocations: ShortText; industries: Tags
 ```
 
----
-
-## 3. Career Profile Schemas (Source of Truth)
+## Resume (`schemas/resume.py`, mirrors `src/types/resumeDocument.ts`, `resume.ts`)
 
 ```python
-from typing import Literal
+TemplateId = "classic"|"modern"|"compact"|"minimal"|"student"|"designer"|"engineer"|"business"|"academic"|"executive"
+ResumeSectionKey = "experience"|"education"|"projects"|"skills"|"certifications"
+ResumeType = "base"|"tailored"
+SourceType = "manual"|"template"|"ai"|"upload"|"tailored"|"duplicate"
 
-ExperienceLevel = Literal['student', 'fresher', 'early', 'experienced']
-WorkMode = Literal['remote', 'hybrid', 'onsite']
+ResumeContent:
+  contact: ResumeContact        # name, email, phone, location, linkedin, github, portfolio
+  summary: Text
+  experience: list[ResumeExperience] (≤50)  # id, title, company, location, start, end, description, bullets (≤30)
+  education: list[ResumeEducation] (≤30)    # id, degree, institution, location, dates, details
+  projects: list[ResumeProject] (≤50)       # id, name, description, tech: Tags, link, bullets
+  skills: ResumeSkills                      # technical, tools, other: Tags
+  certifications: list[ResumeCertification] (≤50)  # id, name, issuer, date, link
 
-class ExperienceEntry(ClaveBaseModel):
-    id: str
-    role: str
-    company: str
-    location: str
-    period: str
-    summary: str
+ResumeDocumentIn:
+  name = "Untitled Resume"; targetRole; template = "classic"
+  sectionOrder: list[ResumeSectionKey] (≤5, de-duplicated; default experience, projects, education, skills, certifications)
+  content: ResumeContent
 
-class EducationEntry(ClaveBaseModel):
-    id: str
-    institution: str
-    degree: str
-    period: str
-    details: str
+ResumeCreate(ResumeDocumentIn):
+  type = "base"; sourceType = "manual"; sourceResumeId?; sourceFileId? (required for "upload")
+  tailoredFor?; status: "draft" | None
 
-class ProjectEntry(ClaveBaseModel):
-    id: str
-    name: str
-    description: str
-    technologies: List[str] = []
-    link: Optional[str] = None
-
-class CertificationEntry(ClaveBaseModel):
-    id: str
-    name: str
-    issuer: str
-    year: str
-
-class LinkEntry(ClaveBaseModel):
-    id: str
-    label: str
-    url: str
-
-class ProfileData(ClaveBaseModel):
-    name: str
-    email: str
-    phone: str
-    location: str
-    summary: str
-    target_roles: List[str] = []
-    experience_level: Optional[ExperienceLevel] = None
-    experience: List[ExperienceEntry] = []
-    education: List[EducationEntry] = []
-    projects: List[ProjectEntry] = []
-    skills: List[str] = []
-    certifications: List[CertificationEntry] = []
-    achievements: List[str] = []
-    links: List[LinkEntry] = []
-    work_modes: List[WorkMode] = []
-    preferred_locations: str = ""
-    industries: List[str] = []
-
-class ProfileUpdateRequest(ClaveBaseModel):
-    headline: Optional[str] = None
-    summary: Optional[str] = None
-    target_roles: Optional[List[str]] = None
-    experience_level: Optional[ExperienceLevel] = None
-    industries: Optional[List[str]] = None
-    preferred_locations: Optional[str] = None
-    work_modes: Optional[List[WorkMode]] = None
-    phone: Optional[str] = None
-    location: Optional[str] = None
+ResumePatch: name?, targetRole?, template?, status: "draft"|"ready" | None
+JobDescriptionInput: jobDescription: LongText = ""
 ```
 
----
+Responses: `ResumeSummary` = `{id, name, targetRole, template, atsScore, type, tailoredFor?, status?, sourceType, sourceResumeId?, createdAt, updatedAt}` (None values dropped). `ResumeDocument` = summary + `sectionOrder` + `content` (`services/resumes.py`).
 
-## 4. Structured Resume Schemas
+## Settings (`schemas/settings.py`, mirrors `src/types/settings.ts`)
 
 ```python
-TemplateId = Literal[
-    'classic', 'modern', 'compact', 'minimal', 'student',
-    'designer', 'engineer', 'business', 'academic', 'executive'
-]
-ResumeSectionKey = Literal['experience', 'education', 'projects', 'skills', 'certifications']
-
-class ResumeContact(ClaveBaseModel):
-    name: str
-    email: str
-    phone: str
-    location: str
-    linkedin: Optional[str] = ""
-    github: Optional[str] = ""
-    portfolio: Optional[str] = ""
-
-class ResumeExperience(ClaveBaseModel):
-    id: str
-    title: str
-    company: str
-    location: str
-    start: str
-    end: str
-    description: str
-    bullets: List[str] = []
-
-class ResumeEducation(ClaveBaseModel):
-    id: str
-    degree: str
-    institution: str
-    location: str
-    dates: str
-    details: str
-
-class ResumeProject(ClaveBaseModel):
-    id: str
-    name: str
-    description: str
-    tech: List[str] = []
-    link: Optional[str] = ""
-    bullets: List[str] = []
-
-class ResumeSkills(ClaveBaseModel):
-    technical: List[str] = []
-    tools: List[str] = []
-    other: List[str] = []
-
-class ResumeCertification(ClaveBaseModel):
-    id: str
-    name: str
-    issuer: str
-    date: str
-    link: Optional[str] = ""
-
-class ResumeContent(ClaveBaseModel):
-    contact: ResumeContact
-    summary: str
-    experience: List[ResumeExperience] = []
-    education: List[ResumeEducation] = []
-    projects: List[ResumeProject] = []
-    skills: ResumeSkills
-    certifications: List[ResumeCertification] = []
-
-class ResumeDocument(ClaveBaseModel):
-    id: str
-    name: str
-    target_role: str
-    template: TemplateId = "modern"
-    section_order: List[ResumeSectionKey] = [
-        "experience", "education", "projects", "skills", "certifications"
-    ]
-    content: ResumeContent
-    updated_at: str
-
-class ResumeListItem(ClaveBaseModel):
-    id: str
-    name: str
-    target_role: str
-    template: TemplateId
-    source_type: str
-    source_resume_id: Optional[str] = None
-    ats_score: Optional[int] = None
-    updated_at: str
+UserSettings:
+  dateFormat: "dmy"|"mdy"|"iso" = "dmy"
+  emailPreference: "important"|"product"|"none" = "important"
+  notifications: {jobs, resumes, applications, product: bool = True}
+  privacy: {personalizeAi: bool = True, usageData: bool = False}
+  defaultTemplate: TemplateId = "classic"
 ```
 
----
+## Request models in API files
 
-## 5. AI Pipelines & ATS Analysis Schemas
+| File | Model | Fields |
+|---|---|---|
+| account.py | SyncRequest | `name?: ShortText` |
+| account.py | AccountUpdate | `name?: ShortText`, `avatarUrl?: str ≤ 400,000` |
+| resumes.py | AnalyzeJobRequest | `targetRole` (required), `jobDescription: LongText`, `careerProfile?: ProfileData` |
+| resumes.py | JobAnalysisIn | `keyRequirements, matchedSkills, gaps: Tags` |
+| resumes.py | GenerateRequest | `targetRole` (required), `industry`, `jobDescription: LongText`, `attempt: 0-20`, `template?`, `jobAnalysis?` |
+| resumes.py | TailorRequest | `jobTitle`, `company`, `jobDescription: LongText` (required) |
+| ai.py | TransformRequest | `text: Text`, `action: improve\|rewrite\|concise\|impact`, `context: {role, skills: Tags, kind?: "summary"}` |
+| ai.py | ChatRequest | `message: Text` (required), `context: Text`, `history: list[ChatTurn] ≤ 20` (`role: user\|assistant`, `content`) |
+| ai.py | InterviewSessionRequest | `role` (required), `level="mid"`, `focusSkills: Tags`, `totalQuestions: 1-15 = 5` |
+| ai.py | InterviewAnswerRequest | `answer: Text` (required) |
+| applications.py | ApplicationUpdate | `status: applied\|interviewing\|rejected`, `notes?: Text` |
+| notifications.py | MarkRead | `ids: list[str] ≤ 100` |
+| support.py | ContactRequest | `name` (required), `email: EmailStr`, `topic="General question"`, `message: 10-5000`, `website` (honeypot) |
+| support.py | FeedbackRequest | `message: 3-5000`, `page`, `rating?: 1-5` |
+| billing.py | CreateOrderRequest | `plan: single\|monthly` |
+| billing.py | VerifyPaymentRequest | `razorpayOrderId ≤100`, `razorpayPaymentId ≤100`, `razorpaySignature ≤200` |
 
-```python
-class JobAnalysisRequest(ClaveBaseModel):
-    target_role: str
-    job_description: str
-    career_profile: Optional[ProfileData] = None
-
-class JobAnalysisResponse(ClaveBaseModel):
-    role: str
-    company: str
-    location: str
-    work_type: str
-    experience: str
-    alignment_score: int = Field(..., ge=0, le=100)
-    key_requirements: List[str]
-    matched_skills: List[str]
-    gaps: List[str]
-    insights: List[str]
-
-class ResumeGenerateRequest(ClaveBaseModel):
-    target_role: str
-    template: TemplateId = "modern"
-    job_description: Optional[str] = None
-    job_analysis: Optional[JobAnalysisResponse] = None
-
-class ResumeTailorRequest(ClaveBaseModel):
-    job_title: str
-    company: str
-    job_description: str
-
-class AtsFactors(ClaveBaseModel):
-    keyword_match: int = Field(..., ge=0, le=100)
-    skills_match: int = Field(..., ge=0, le=100)
-    experience_match: int = Field(..., ge=0, le=100)
-    formatting: int = Field(..., ge=0, le=100)
-    section_completeness: int = Field(..., ge=0, le=100)
-
-class AtsAnalysisResponse(ClaveBaseModel):
-    score: int = Field(..., ge=0, le=100)
-    summary: str
-    factors: AtsFactors
-    missing_keywords: List[str] = []
-    suggestions: List[str] = []
-```
-
----
-
-## 6. Jobs Schemas
-
-```python
-WorkType = Literal['remote', 'hybrid', 'onsite']
-JobLevel = Literal['internship', 'entry', 'junior', 'mid']
-
-class Job(ClaveBaseModel):
-    id: str
-    title: str
-    company: str
-    location: str
-    experience: str
-    match_percent: int = Field(..., ge=0, le=100)
-    skills: List[str]
-    city: str
-    work_type: WorkType
-    level: JobLevel
-    role_type: str
-    posted_days_ago: int
-    salary: Optional[str] = None
-
-class JobDetail(ClaveBaseModel):
-    job_type: str
-    about: str
-    responsibilities: List[str]
-    requirements: List[str]
-    nice_to_have: List[str]
-    stretch_skill: str
-
-class CompanyInfo(ClaveBaseModel):
-    description: str
-    industry: str
-    size: str
-    location: str
-```
+Query parameters (job filters, limits) are validated with FastAPI `Query` constraints listed in 02.

@@ -12,13 +12,13 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
 import { useAsyncData } from '@/hooks/useAsyncData'
+import { useApplications } from '@/hooks/useApplications'
 import { useSavedJobs } from '@/hooks/useSavedJobs'
-import { recommendedJobIds } from '@/mocks/jobs.mock'
 import { getJobDetails, getJobs } from '@/services/job.service'
 import { getProfile } from '@/services/profile.service'
 import type { Job } from '@/types/job'
 import { deriveMatchReasons } from '@/utils/jobMatchReasons'
-import { applyJobFilters, countActiveFilters, defaultFilters } from '@/utils/jobFilters'
+import { applyJobFilters, countActiveFilters, defaultFilters, roleOptionsFor } from '@/utils/jobFilters'
 
 type Sort = 'match' | 'newest'
 
@@ -30,6 +30,7 @@ export function JobsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const detailRef = useRef<HTMLDivElement>(null)
   const { saved, isSaved, toggle } = useSavedJobs()
+  const { applications } = useApplications()
   const [view] = useJobsView()
   const [sort, setSort] = useState<Sort>('match')
   const [query, setQuery] = useState('')
@@ -39,12 +40,12 @@ export function JobsPage() {
   const tracking = view === 'applied' || view === 'interviewing' || view === 'rejected'
   const source =
     view === 'all'
-      ? all.filter((job) => recommendedJobIds.includes(job.id))
+      ? all.filter((job) => job.recommended)
       : view === 'saved'
         ? all.filter((job) => job.id in saved)
         : view === 'matched'
           ? all.filter((job) => job.matchPercent >= MATCHED_THRESHOLD)
-          : []
+          : all.filter((job) => applications[job.id]?.status === view)
   const visible = applyJobFilters(source, query, filters).sort((a, b) =>
     sort === 'match' ? b.matchPercent - a.matchPercent : a.postedDaysAgo - b.postedDaysAgo,
   )
@@ -60,6 +61,7 @@ export function JobsPage() {
   const isFiltering = query.trim() !== '' || countActiveFilters(filters) > 0
 
   const locations = [...new Set(all.map((job) => job.city))].sort()
+  const roles = roleOptionsFor(all)
   const heading = { all: 'Recommended for You', saved: 'Saved Jobs', matched: 'Top Matches', applied: 'Applied', interviewing: 'Interviewing', rejected: 'Rejected' }[view]
 
   const listHeader = (
@@ -86,7 +88,7 @@ export function JobsPage() {
 
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
         <JobSearch value={query} onChange={setQuery} className="col-span-2 lg:col-span-5" />
-        <JobFilters filters={filters} onChange={setFilters} locations={locations} />
+        <JobFilters filters={filters} onChange={setFilters} locations={locations} roles={roles} />
       </div>
 
       <section aria-label={`${view} jobs`}>
@@ -97,7 +99,7 @@ export function JobsPage() {
           <EmptyState
             icon={tracking ? Briefcase : isFiltering ? SearchX : Bookmark}
             title={tracking ? `No ${view} jobs yet` : isFiltering ? 'No jobs match' : 'No saved jobs yet'}
-            description={tracking ? 'Applications you track will appear here.' : isFiltering ? 'Try a different search or loosen your filters.' : 'Tap the bookmark on any job to save it here.'}
+            description={tracking ? 'Use “Apply on Company Site” or “Mark as Applied” on any job, then update its stage here.' : isFiltering ? 'Try a different search or loosen your filters.' : 'Tap the bookmark on any job to save it here.'}
             action={
               isFiltering &&
               !tracking && (

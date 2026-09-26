@@ -28,7 +28,7 @@ export function ImportProgress({ stages, current, detail }: ImportProgressProps)
             <span
               className={cn(
                 'flex size-5 shrink-0 items-center justify-center rounded-full',
-                index < activeIndex ? 'bg-primary text-white' : 'border border-border',
+                index < activeIndex ? 'bg-primary text-on-primary' : 'border border-border',
               )}
               aria-hidden
             >

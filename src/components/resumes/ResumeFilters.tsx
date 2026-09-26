@@ -29,7 +29,7 @@ export function ResumeFilters({ filter, onFilter, sort, onSort, view, onView }: 
             onClick={() => onFilter(value)}
             className={cn(
               'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-              filter === value ? 'bg-brand text-white shadow-xs' : 'border border-border bg-surface text-text hover:border-primary/30',
+              filter === value ? 'bg-brand text-on-primary shadow-xs' : 'border border-border bg-surface text-text hover:border-primary/30',
             )}
           >
             {filterLabels[value]}

@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { ClaveLogo, ClaveMark } from '@/components/brand/ClaveLogo'
 import { LandingContainer } from '@/components/landing/LandingContainer'
+import { legalPages } from '@/components/legal/legalInfo'
 import { paths } from '@/routes/navigation'
 import { navigateWithTransition } from '@/utils/transitionNavigation'
 
@@ -170,11 +171,6 @@ export function LandingFooter() {
                 </a>
               </li>
               <li>
-                <a href="#career-guide" className="transition-colors duration-150 hover:text-[#10B981]">
-                  Career Guide
-                </a>
-              </li>
-              <li>
                 <a
                   href={paths.createFromTemplate}
                   onClick={(e) => handleLinkClick(e, paths.createFromTemplate)}
@@ -192,16 +188,17 @@ export function LandingFooter() {
               LEGAL
             </span>
             <ul className="space-y-2.5 text-sm text-[#A7B5B1]">
-              <li>
-                <a href="#privacy" className="transition-colors duration-150 hover:text-[#10B981]">
-                  Privacy Policy
-                </a>
-              </li>
-              <li>
-                <a href="#terms" className="transition-colors duration-150 hover:text-[#10B981]">
-                  Terms of Service
-                </a>
-              </li>
+              {legalPages.map((page) => (
+                <li key={page.path}>
+                  <a
+                    href={page.path}
+                    onClick={(e) => handleLinkClick(e, page.path)}
+                    className="transition-colors duration-150 hover:text-[#10B981] cursor-pointer"
+                  >
+                    {page.short}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
         </div>

@@ -1,9 +1,19 @@
+import { AI_TIMEOUT_MS, apiClient } from '@/services/apiClient'
 import type { ResumeDocument } from '@/types/resumeDocument'
+
+/** A change the backend suggests, as data. The UI applies the ones the user keeps. */
+export type TailorPatch =
+  | { op: 'setTargetRole'; value: string }
+  | { op: 'setSummary'; value: string }
+  | { op: 'addSkills'; category: 'technical' | 'tools' | 'other'; values: string[] }
+  | { op: 'moveProjectToTop'; projectId: string }
+  | { op: 'replaceBullet'; experienceId: string; index: number; value: string }
 
 export interface TailorChange {
   id: string
   title: string
   description: string
+  patch: TailorPatch
   apply: (doc: ResumeDocument) => ResumeDocument
 }
 
@@ -27,7 +37,7 @@ export interface AnalyzeJobDescriptionRequest {
   jobDescription: string
 }
 
-/** Mock analysis: keyword matching against a small vocabulary. The real version calls the AI backend. */
+/** Small client-side vocabulary for the instant keyword preview under the JD box (no network). */
 const VOCAB = [
   'figma', 'user research', 'wireframing', 'prototyping', 'design system', 'usability testing', 'accessibility',
   'information architecture', 'a/b testing', 'stakeholder', 'analytics', 'metrics', 'agile', 'journey mapping',
@@ -38,10 +48,6 @@ export const extractKeywords = (text: string): string[] => {
   const lower = text.toLowerCase()
   return VOCAB.filter((keyword) => lower.includes(keyword))
 }
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-const titleCase = (text: string) => text.replace(/\b\w/g, (c) => c.toUpperCase())
-const list = (items: string[]) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : (items[0] ?? ''))
 
 export function docCorpus(doc: ResumeDocument): string {
   const { content } = doc
@@ -62,136 +68,58 @@ export function docCorpus(doc: ResumeDocument): string {
 export function jobMatch(doc: ResumeDocument, keywords: string[]): number {
   if (keywords.length === 0) return 0
   const corpus = docCorpus(doc)
-  return Math.round((keywords.filter((k) => corpus.includes(k)).length / keywords.length) * 100)
+  return Math.round((keywords.filter((k) => corpus.includes(k.toLowerCase())).length / keywords.length) * 100)
+}
+
+/** Client twin of the backend's apply_patch (backend/app/services/resume_logic.py). */
+function applyPatch(doc: ResumeDocument, patch: TailorPatch): ResumeDocument {
+  const { content } = doc
+  switch (patch.op) {
+    case 'setTargetRole':
+      return { ...doc, targetRole: patch.value }
+    case 'setSummary':
+      return { ...doc, content: { ...content, summary: patch.value } }
+    case 'addSkills': {
+      const existing = new Set([...content.skills.technical, ...content.skills.tools, ...content.skills.other].map((s) => s.toLowerCase()))
+      const added = patch.values.filter((s) => !existing.has(s.toLowerCase()))
+      return { ...doc, content: { ...content, skills: { ...content.skills, [patch.category]: [...content.skills[patch.category], ...added] } } }
+    }
+    case 'moveProjectToTop': {
+      const index = content.projects.findIndex((p) => p.id === patch.projectId)
+      if (index <= 0) return doc
+      const projects = [...content.projects]
+      const [picked] = projects.splice(index, 1)
+      return { ...doc, content: { ...content, projects: [picked, ...projects] } }
+    }
+    case 'replaceBullet':
+      return {
+        ...doc,
+        content: {
+          ...content,
+          experience: content.experience.map((e) =>
+            e.id === patch.experienceId ? { ...e, bullets: e.bullets.map((b, i) => (i === patch.index ? patch.value : b)) } : e,
+          ),
+        },
+      }
+  }
+}
+
+type ApiTailorAnalysis = Omit<TailorAnalysis, 'changes'> & { changes: Omit<TailorChange, 'apply'>[] }
+
+/** POST /api/resumes/:id/tailor/analyze — the AI model suggests changes; nothing is saved and the original stays untouched. */
+export async function analyzeJobDescription(req: AnalyzeJobDescriptionRequest, _doc?: ResumeDocument): Promise<TailorAnalysis> {
+  const result = await apiClient.post<ApiTailorAnalysis>(
+    `/resumes/${encodeURIComponent(req.resumeId)}/tailor/analyze`,
+    { jobTitle: req.jobTitle, company: req.company, jobDescription: req.jobDescription },
+    AI_TIMEOUT_MS,
+  )
+  return { ...result, changes: result.changes.map((change) => ({ ...change, apply: (doc: ResumeDocument) => applyPatch(doc, change.patch) })) }
 }
 
 export async function analyzeJob(doc: ResumeDocument, job: JobInput): Promise<TailorAnalysis> {
-  await wait(2400)
-  const jd = job.description.toLowerCase()
-  const all = VOCAB.filter((keyword) => jd.includes(keyword))
-  const corpus = docCorpus(doc)
-  const matched = all.filter((k) => corpus.includes(k))
-  const missing = all.filter((k) => !corpus.includes(k))
-  const role = job.title.trim() || doc.targetRole
-  const company = job.company.trim()
-  const changes: TailorChange[] = []
-
-  if (role && role !== doc.targetRole) {
-    changes.push({
-      id: 'role',
-      title: `Target the “${role}” role`,
-      description: 'Updates your target role so keyword scoring and your resume list reflect this job.',
-      apply: (d) => ({ ...d, targetRole: role }),
-    })
-  }
-
-  const firstSentence = doc.content.summary.split(/(?<=[.!?])\s/)[0] ?? ''
-  const focus = matched.slice(0, 3).map(titleCase)
-  if (focus.length > 0) {
-    changes.push({
-      id: 'summary',
-      title: 'Rewrite your summary for this job',
-      description: `Leads with ${list(focus)}, which the job asks for and you already have.`,
-      apply: (d) => ({
-        ...d,
-        content: {
-          ...d.content,
-          summary: `${titleCase(role)} with hands-on experience in ${list(focus)}. ${firstSentence} Ready to contribute to ${company || 'your team'}.`.replace(/\s+/g, ' '),
-        },
-      }),
-    })
-  }
-
-  const add = missing.slice(0, 4).map(titleCase)
-  if (add.length > 0) {
-    changes.push({
-      id: 'keywords',
-      title: `Add ${list(add)} to Skills`,
-      description: 'The job mentions these and your resume does not. Keep only the ones you genuinely have.',
-      apply: (d) => ({ ...d, content: { ...d.content, skills: { ...d.content.skills, other: [...d.content.skills.other, ...add] } } }),
-    })
-  }
-
-  const hits = (text: string) => all.filter((k) => text.toLowerCase().includes(k)).length
-  const projectScores = doc.content.projects.map((p) => hits([p.name, p.description, ...p.tech, ...p.bullets].join(' ')))
-  const best = projectScores.indexOf(Math.max(...projectScores))
-  if (doc.content.projects.length > 1 && best > 0) {
-    changes.push({
-      id: 'projects',
-      title: 'Lead with your most relevant project',
-      description: `Moves “${doc.content.projects[best].name}” to the top, since it matches the job most closely.`,
-      apply: (d) => {
-        const projects = [...d.content.projects]
-        const [picked] = projects.splice(best, 1)
-        return { ...d, content: { ...d.content, projects: [picked, ...projects] } }
-      },
-    })
-  }
-
-  const firstBullet = doc.content.experience[0]?.bullets[0]
-  const emphasise = matched.find((k) => firstBullet && !firstBullet.toLowerCase().includes(k))
-  if (firstBullet && emphasise) {
-    changes.push({
-      id: 'bullet',
-      title: `Emphasise ${titleCase(emphasise)} in your top bullet`,
-      description: 'Makes a skill the job cares about visible in your most recent role.',
-      apply: (d) => ({
-        ...d,
-        content: {
-          ...d.content,
-          experience: d.content.experience.map((e, i) =>
-            i === 0 ? { ...e, bullets: e.bullets.map((b, j) => (j === 0 ? `${b.replace(/\.$/, '')}, applying ${emphasise}` : b)) } : e,
-          ),
-        },
-      }),
-    })
-  }
-
-  return { jobTitle: role, company, keywords: { matched, missing, all }, changes }
+  return analyzeJobDescription({ resumeId: doc.id, jobTitle: job.title, company: job.company, jobDescription: job.description }, doc)
 }
 
 export function applyChanges(doc: ResumeDocument, analysis: TailorAnalysis, selectedIds: Set<string>): ResumeDocument {
   return analysis.changes.filter((c) => selectedIds.has(c.id)).reduce((current, change) => change.apply(current), doc)
-}
-
-/**
- * Service abstraction for job description analysis.
- * Target backend endpoint: POST /api/resumes/analyze-job
- * Keeps frontend provider-agnostic without embedding AI API keys.
- */
-export async function analyzeJobDescription(
-  req: AnalyzeJobDescriptionRequest,
-  doc?: ResumeDocument
-): Promise<TailorAnalysis> {
-  if (doc) {
-    return analyzeJob(doc, {
-      title: req.jobTitle,
-      company: req.company,
-      description: req.jobDescription,
-    })
-  }
-
-  const fallbackDoc: ResumeDocument = {
-    id: req.resumeId,
-    name: 'Resume',
-    targetRole: req.jobTitle || 'Product Designer',
-    template: 'classic',
-    sectionOrder: ['experience', 'education', 'skills', 'projects', 'certifications'],
-    content: {
-      contact: { name: 'Candidate', email: 'hello@example.com', phone: '', location: '', linkedin: '', github: '', portfolio: '' },
-      summary: 'Experienced professional.',
-      skills: { technical: ['Figma', 'User Research'], tools: ['Jira'], other: [] },
-      experience: [],
-      education: [],
-      projects: [],
-      certifications: [],
-    },
-    updatedAt: new Date().toISOString(),
-  }
-
-  return analyzeJob(fallbackDoc, {
-    title: req.jobTitle,
-    company: req.company,
-    description: req.jobDescription,
-  })
 }

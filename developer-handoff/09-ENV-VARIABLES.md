@@ -1,82 +1,97 @@
-# 09 — Environment Variables Reference
+# 09 · Environment Variables
 
-This document details all configuration parameters required to run the Clave backend.
+Never commit real values. Backend values live in `backend/.env` (template: `backend/.env.example`), read by `app/core/config.py` (pydantic-settings, case-insensitive, unknown keys ignored). Relative file paths resolve against `backend/`.
 
----
+## Backend
 
-## 1. Environment Variables Table
+### App
+| Variable | Default | Purpose |
+|---|---|---|
+| APP_ENV | development | `production` disables `/api/docs` and `/api/openapi.json` |
+| ALLOWED_ORIGINS | http://localhost:5173,http://127.0.0.1:5173 | Comma-separated CORS origins |
+| WEB_BASE_URL | http://localhost:5173 | Base URL used in email links |
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `ENVIRONMENT` | Yes | `development` | `development`, `staging`, `production` |
-| `DEBUG` | No | `False` | Enables detailed stack traces in responses (dev only) |
-| `DATABASE_URL` | Yes | - | PostgreSQL async connection string (`postgresql+asyncpg://...`) |
-| `SUPABASE_URL` | Optional | - | Supabase project URL (if using Supabase) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Optional | - | Supabase service role key (bypasses RLS for admin operations) |
-| `JWT_SECRET_KEY` | Yes | - | Secret key used to sign and verify JWT tokens |
-| `JWT_ALGORITHM` | No | `HS256` | JWT algorithm (`HS256` or `RS256`) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES`| No | `60` | Duration for access token validity |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | No | `30` | Duration for refresh token validity |
-| `OPENAI_API_KEY` | Yes | - | OpenAI API key for resume parsing and generation |
-| `OPENAI_MODEL` | No | `gpt-4o-2024-08-06`| Default model for structured generation |
-| `ANTHROPIC_API_KEY` | Optional | - | Anthropic API key (if Claude is configured as provider) |
-| `STORAGE_PROVIDER` | No | `s3` | `s3`, `supabase`, or `local` |
-| `S3_BUCKET_NAME` | Optional | `clave-resumes` | S3 bucket for storing uploaded resumes and exports |
-| `AWS_ACCESS_KEY_ID` | Optional | - | AWS access key for S3 |
-| `AWS_SECRET_ACCESS_KEY` | Optional | - | AWS secret key for S3 |
-| `AWS_REGION` | Optional | `us-east-1` | AWS S3 region |
-| `RAZORPAY_KEY_ID` | Optional | - | Razorpay API key for Indian rupee payments (₹49, ₹199) |
-| `RAZORPAY_KEY_SECRET` | Optional | - | Razorpay secret key |
-| `CORS_ORIGINS` | No | `["http://localhost:5173"]` | JSON list of allowed origin URLs |
+### Database & auth
+| Variable | Default | Purpose |
+|---|---|---|
+| MONGO_URL | mongodb://localhost:27017 | MongoDB connection string |
+| MONGO_DB_NAME | clave | Database name |
+| FIREBASE_SERVICE_ACCOUNT | secrets/firebase-service-account.json | Firebase Admin service-account file (required to start) |
 
----
+### AI
+| Variable | Default | Purpose |
+|---|---|---|
+| AI_USE_CLOUD_PROJECT | true | `true`: authenticate with a service account; `false`: use `AI_API_KEY` |
+| AI_CREDENTIALS_FILE | secrets/ai-service-account.json | Service-account file for the AI model provider |
+| AI_API_KEY | (empty) | AI model provider API key (when `AI_USE_CLOUD_PROJECT=false`) |
+| AI_MODEL | (empty) | Main model ID supplied by the AI provider |
+| AI_MODEL_LITE | (empty) | Lite model ID supplied by the AI provider, for short tasks |
+| AI_THINKING_LEVEL | low | `minimal`/`low`/`medium`/`high`; empty disables |
+| AI_TIMEOUT_SECONDS | 90 | Per-request timeout |
+| AI_RATE_LIMIT | 30/minute | Per-user burst limit on AI endpoints (slowapi syntax) |
+| AI_DAILY_LIMIT_FREE | 30 | Daily AI actions, free users |
+| AI_DAILY_LIMIT_PAID | 300 | Daily AI actions, active Monthly plan |
+| RATE_LIMIT_STORAGE_URI | memory:// | Limiter storage; `redis://host:6379` for multiple processes |
+| AI_CLOUD_PROJECT | ats-resume-grader | Cloud project the AI model runs in (when `AI_USE_CLOUD_PROJECT=true`) |
+| AI_CLOUD_LOCATION | global | Region for the AI model endpoint |
 
-## 2. `.env.example` Template
+### Plans & payments
+| Variable | Default | Purpose |
+|---|---|---|
+| ENFORCE_PLAN_LIMITS | true | Resume quotas; keep `true` in production |
+| FREE_RESUME_LIMIT | 1 | Lifetime free resumes |
+| SINGLE_RESUME_PRICE_INR | 49 | Single Resume price |
+| MONTHLY_PRICE_INR | 199 | Monthly Unlimited price |
+| MONTHLY_PLAN_DAYS | 30 | Monthly plan length |
+| FREE_RESUME_GUARD_ENABLED | false | One free resume per network/device |
+| FREE_RESUME_GUARD_HASH_SALT | (empty) | Salt for guard hashes (set when enabled) |
+| RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET | (empty) | Razorpay keys; payment endpoints return 503 until set |
 
-Create a file named `.env` in the backend root directory with the following structure:
+### Jobs
+| Variable | Default | Purpose |
+|---|---|---|
+| APIFY_API_TOKEN | (empty) | Apify token (or an Apify URL containing `?token=`); enables live search and the job feed |
+| APIFY_LINKEDIN_ENABLED | false | Allow the LinkedIn source |
+| APIFY_ACTOR_INDEED / _NAUKRI / _LINKEDIN / _GOOGLE_SEARCH / _NAUKRI_STRICT | built-in actor ids | Optional actor overrides (read via `os.getenv` in `apify_jobs.py`) |
+| SEED_DEMO_JOBS | true | Load demo jobs when the jobs collection is empty |
+| JOB_INGEST_INTERVAL_HOURS | 0 | Run the job feed inside the API every N hours; 0 = use cron |
+| JOB_INGEST_QUERIES | (empty) | Comma-separated queries; empty = users' most common target roles |
+| JOB_INGEST_LOCATION | India | Search location |
+| JOB_INGEST_SOURCES | indeed,naukri | Sources for the feed |
+| JOB_INGEST_PER_QUERY | 10 | Listings per query |
+| JOB_INGEST_MAX_QUERIES | 6 | Max queries per run |
+| JOB_MAX_AGE_DAYS | 30 | Deactivate feed jobs not seen for this long |
+| JOB_MATCH_NOTIFY_THRESHOLD | 85 | Match % that triggers a "new jobs" notification |
 
-```env
-# =============================================================================
-# CLAVE BACKEND CONFIGURATION
-# =============================================================================
+### Uploads
+| Variable | Default | Purpose |
+|---|---|---|
+| MAX_UPLOAD_BYTES | 10485760 | 10 MB upload cap |
+| UPLOAD_RETENTION_DAYS | 7 | Upload lifetime |
+| UPLOAD_BUCKET | (empty) | Storage bucket name; empty = store in MongoDB |
+| UPLOAD_PREFIX | clave-uploads | Object prefix in the bucket |
 
-# App Environment
-ENVIRONMENT=development
-DEBUG=True
-PORT=8000
-HOST=0.0.0.0
+### Email & notifications
+| Variable | Default | Purpose |
+|---|---|---|
+| SMTP_HOST | (empty) | Empty = emails skipped |
+| SMTP_PORT | 587 | 465 uses implicit TLS |
+| SMTP_USERNAME / SMTP_PASSWORD | (empty) | SMTP login |
+| SMTP_USE_TLS | true | STARTTLS on non-465 ports |
+| EMAIL_FROM | Clave <hello@clave.app> | Sender |
+| SUPPORT_INBOX | support@clave.app | Receives contact and feedback messages |
+| NOTIFICATION_RETENTION_DAYS | 90 | Notification TTL |
 
-# Database (PostgreSQL with asyncpg driver)
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/clave_db
+## Frontend
 
-# Supabase (Optional, required only if using Supabase Auth/Storage)
-# SUPABASE_URL=https://your-project.supabase.co
-# SUPABASE_SERVICE_ROLE_KEY=eyJh...
-# SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+Set in `.env.local` (template: `.env.example`). All are public at build time; don't put secrets here.
 
-# JWT Authentication
-JWT_SECRET_KEY=generate-a-secure-random-64-character-secret-key-here
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# AI Provider Credentials
-OPENAI_API_KEY=sk-proj-your-openai-api-key-here
-OPENAI_MODEL=gpt-4o-2024-08-06
-# ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
-
-# Storage Configuration
-STORAGE_PROVIDER=local # Use 's3' or 'supabase' in production
-LOCAL_STORAGE_DIR=./storage_uploads
-S3_BUCKET_NAME=clave-resumes
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_REGION=ap-south-1
-
-# Payments (Razorpay for ₹49 Single / ₹199 Monthly plans)
-RAZORPAY_KEY_ID=rzp_test_your_key_id
-RAZORPAY_KEY_SECRET=your_razorpay_key_secret
-
-# Security & CORS
-CORS_ORIGINS=["http://localhost:5173", "http://127.0.0.1:5173"]
-```
+| Variable | Purpose |
+|---|---|
+| VITE_API_BASE_URL | API base, default `/api` (proxied in dev, reverse-proxied in prod) |
+| VITE_FIREBASE_API_KEY | Firebase web config |
+| VITE_FIREBASE_AUTH_DOMAIN | Firebase web config |
+| VITE_FIREBASE_PROJECT_ID | Firebase web config |
+| VITE_FIREBASE_STORAGE_BUCKET | Firebase web config |
+| VITE_FIREBASE_MESSAGING_SENDER_ID | Firebase web config |
+| VITE_FIREBASE_APP_ID | Firebase web config |

@@ -1,11 +1,11 @@
-import { Bookmark, BookmarkCheck, Briefcase, ExternalLink, MapPin, Target, Wifi } from 'lucide-react'
+import { Bookmark, BookmarkCheck, Briefcase, MapPin, Target, Wifi } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { ApplyControl } from '@/components/jobs/ApplyControl'
 import { CompanyLogo } from '@/components/jobs/CompanyLogo'
 import { Button } from '@/components/ui/Button'
 import { buttonStyles } from '@/components/ui/buttonStyles'
 import { paths } from '@/routes/navigation'
-import { toast } from '@/store/toastStore'
 import type { Job, JobDetail } from '@/types/job'
 import { workTypeLabels } from '@/utils/jobFilters'
 import { postedLong } from '@/utils/relativeTime'
@@ -69,13 +69,7 @@ export function JobHeader({ job, detail, saved, onToggleSave }: JobHeaderProps) 
             <Target className="size-4" aria-hidden />
             Tailor Resume
           </Link>
-          <Button
-            variant="secondary"
-            trailingIcon={<ExternalLink className="size-4" />}
-            onClick={() => toast.info('Applying isn’t connected yet', 'This will open the company’s application page.')}
-          >
-            Apply on Company Site
-          </Button>
+          <ApplyControl job={job} />
         </div>
       </div>
     </header>

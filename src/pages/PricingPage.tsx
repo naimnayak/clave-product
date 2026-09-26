@@ -79,7 +79,7 @@ const FAQ_ITEMS = [
   {
     question: 'Can I cancel the ₹199 monthly plan?',
     answer:
-      'Yes. You can cancel your monthly subscription according to the cancellation terms shown at checkout.',
+      'There’s nothing to cancel. Monthly Unlimited is a one-time payment for 30 days and never renews automatically. If you haven’t used it, you can ask for a full refund within 7 days (see our Refund & Cancellation Policy).',
   },
   {
     question: 'Can I create different resumes for different jobs?',

@@ -24,7 +24,7 @@ export function Checkbox({ label, description, className, disabled, ...props }: 
           {...props}
         />
         <Check
-          className="pointer-events-none absolute inset-0 m-auto size-3 text-white opacity-0 peer-checked:opacity-100"
+          className="pointer-events-none absolute inset-0 m-auto size-3 text-on-primary opacity-0 peer-checked:opacity-100"
           strokeWidth={3}
           aria-hidden
         />

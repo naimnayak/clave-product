@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getResumeDocument, saveResumeDocument } from '@/services/resumeDocument.service'
+import { toast } from '@/store/toastStore'
 import type { ResumeDocument } from '@/types/resumeDocument'
 
 export type SaveState = 'saved' | 'saving' | 'unsaved'
@@ -19,26 +20,41 @@ export function useResumeEditor(id: string) {
 
   useEffect(() => {
     let active = true
-    getResumeDocument(id).then((loaded) => {
-      if (!active) return
-      docRef.current = loaded
-      setDoc(loaded)
-      setStatus(loaded ? 'ready' : 'notFound')
-    })
+    getResumeDocument(id).then(
+      (loaded) => {
+        if (!active) return
+        docRef.current = loaded
+        setDoc(loaded)
+        setStatus(loaded ? 'ready' : 'notFound')
+      },
+      (error: unknown) => {
+        if (!active) return
+        toast.error('Couldn’t open this resume', error instanceof Error ? error.message : 'Please try again.')
+        setStatus('notFound')
+      },
+    )
     return () => {
       active = false
     }
   }, [id])
 
-  const persist = useCallback(async () => {
+  /** Saves the latest document. Resolves false (and keeps the edit pending) if the API call fails. */
+  const persist = useCallback(async (): Promise<boolean> => {
     const current = docRef.current
-    if (!current) return
+    if (!current) return false
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
     const saving = version.current
     setSaveState('saving')
-    await saveResumeDocument(current)
+    try {
+      await saveResumeDocument(current)
+    } catch (error) {
+      setSaveState('unsaved')
+      toast.error('Couldn’t save your changes', error instanceof Error ? error.message : 'Please try again.')
+      return false
+    }
     if (saving === version.current) setSaveState('saved')
+    return true
   }, [])
 
   const update = useCallback(
@@ -61,7 +77,7 @@ export function useResumeEditor(id: string) {
       if (timer.current && docRef.current) {
         clearTimeout(timer.current)
         timer.current = null
-        void saveResumeDocument(docRef.current)
+        void saveResumeDocument(docRef.current).catch(() => undefined)
       }
     }
     window.addEventListener('pagehide', flush)

@@ -26,7 +26,7 @@ export function ResumeCreationChoice({ variant = 'compact', compact, className }
               featured ? 'border-primary/30 bg-tint shadow-xs hover:border-primary/60' : 'border-border bg-surface shadow-xs hover:border-primary/40',
             )}
           >
-            <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-control', featured ? 'bg-brand text-white shadow-brand' : 'icon-tile')}>
+            <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-control', featured ? 'bg-brand text-on-primary shadow-brand' : 'icon-tile')}>
               <Icon className="size-5" strokeWidth={1.75} aria-hidden />
             </span>
             <span className="min-w-0 flex-1">

@@ -1,32 +1,36 @@
-# React + TypeScript + Vite
+# Clave
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+AI career workspace for students, freshers and early-career professionals: one Career Profile, AI-generated and tailored ATS-friendly resumes, ATS analysis, job matching, application tracking, a career assistant and mock interviews.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Frontend** (`src/`): React 19, Vite, TypeScript, Tailwind CSS v4, Zustand, Firebase Auth (web SDK).
+- **Backend** (`backend/`): FastAPI, MongoDB (PyMongo async), Firebase Admin token verification, an AI model provider for AI features, Razorpay (payments), Apify (job listings), optional SMTP and upload bucket.
 
-## React Compiler
+## Run locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+# Backend (from backend/), needs MongoDB running
+python -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env               # fill in; service-account files go in backend/secrets/
+.venv/bin/uvicorn app.main:app --reload --port 8000
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+# Frontend (from repo root)
+cp .env.example .env.local         # Firebase web config
+npm install
+npm run dev                        # http://localhost:5173, /api is proxied to :8000
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Vite dev server |
+| `npm run build` | Type check and production build to `dist/` |
+| `npm run lint` | oxlint |
+| `backend/.venv/bin/pytest` (from `backend/`) | Backend tests |
+| `backend/.venv/bin/python -m app.cli.ingest_jobs` (from `backend/`) | One job-feed ingestion pass |
+
+## Documentation
+
+See [developer-handoff/](developer-handoff/README.md) for the database schema, API reference, auth, AI architecture, uploads, plans, environment variables, testing and deployment.

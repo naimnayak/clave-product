@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type { StateStorage } from 'zustand/middleware'
-import { useOnboardingStore } from '@/store/onboardingStore'
+import { setUnauthenticatedHandler } from '@/services/apiClient'
 import * as authService from '@/services/auth.service'
+import { useOnboardingStore } from '@/store/onboardingStore'
+import { toast } from '@/store/toastStore'
 import type { AuthSession, LoginInput, SignupInput } from '@/types/auth'
 import type { User } from '@/types/user'
 
@@ -16,9 +18,11 @@ interface AuthState {
   signInWithGoogle: () => Promise<void>
   completeOnboarding: () => Promise<void>
   signOut: () => void
-  /** Mock account edits (name, email, photo). The real API would PATCH /me. */
-  updateUser: (patch: Partial<Pick<User, 'name' | 'email' | 'avatarUrl'>>) => void
+  /** Name and photo go to PUT /api/me; an email change sends a Firebase confirmation link. Resolves false on failure. */
+  updateUser: (patch: Partial<Pick<User, 'name' | 'email' | 'avatarUrl'>>) => Promise<boolean>
   deleteAccount: () => Promise<void>
+  /** Re-reads the account after a reload; signs out locally if Firebase no longer has a session. */
+  restore: () => Promise<void>
 }
 
 const rememberAwareStorage: StateStorage = {
@@ -43,37 +47,67 @@ const fromSession = (session: AuthSession, remember: boolean) => ({
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
-      user: null,
-      onboardingComplete: false,
-      remember: true,
-      signIn: async ({ remember, ...credentials }) => {
-        set(fromSession(await authService.login(credentials), remember))
-      },
-      signUp: async (input) => {
-        set(fromSession(await authService.signup(input), true))
-      },
-      signInWithGoogle: async () => {
-        set(fromSession(await authService.continueWithGoogle(), true))
-      },
-      completeOnboarding: async () => {
-        const { user } = get()
-        if (!user) return
-        await authService.markOnboardingComplete(user.email)
-        set({ onboardingComplete: true })
-      },
-      signOut: () => {
+    (set, get) => {
+      const clear = () => {
         useOnboardingStore.getState().reset()
         set({ user: null, onboardingComplete: false })
-      },
-      updateUser: (patch) => set((state) => (state.user ? { user: { ...state.user, ...patch } } : state)),
-      deleteAccount: async () => {
-        const { user } = get()
-        if (user) await authService.deleteAccount(user.email)
-        useOnboardingStore.getState().reset()
-        set({ user: null, onboardingComplete: false })
-      },
-    }),
+      }
+
+      return {
+        user: null,
+        onboardingComplete: false,
+        remember: true,
+        signIn: async ({ remember, ...credentials }) => {
+          set(fromSession(await authService.login(credentials, remember), remember))
+        },
+        signUp: async (input) => {
+          set(fromSession(await authService.signup(input), true))
+        },
+        signInWithGoogle: async () => {
+          set(fromSession(await authService.continueWithGoogle(), true))
+        },
+        completeOnboarding: async () => {
+          if (!get().user) return
+          await authService.markOnboardingComplete()
+          set({ onboardingComplete: true })
+        },
+        signOut: () => {
+          clear()
+          void authService.logout().catch(() => undefined)
+        },
+        updateUser: async ({ email, ...patch }) => {
+          const previous = get().user
+          if (!previous) return false
+          set({ user: { ...previous, ...patch } })
+          try {
+            const body: { name?: string; avatarUrl?: string | null } = {}
+            if (patch.name !== undefined && patch.name !== previous.name) body.name = patch.name
+            if ('avatarUrl' in patch && patch.avatarUrl !== previous.avatarUrl) body.avatarUrl = patch.avatarUrl ?? null
+            if (Object.keys(body).length > 0) set({ user: await authService.updateAccount(body) })
+            if (email !== undefined && email.trim().toLowerCase() !== previous.email) await authService.requestEmailChange(email.trim().toLowerCase())
+            return true
+          } catch (error) {
+            set({ user: previous })
+            toast.error('Couldn’t update your account', error instanceof Error ? error.message : undefined)
+            return false
+          }
+        },
+        deleteAccount: async () => {
+          if (!get().user) return
+          await authService.deleteAccount()
+          clear()
+        },
+        restore: async () => {
+          try {
+            const session = await authService.restoreSession()
+            if (session) set(fromSession(session, get().remember))
+            else if (get().user) clear()
+          } catch {
+            // Offline or API down: keep the cached session; API calls will surface errors.
+          }
+        },
+      }
+    },
     {
       name: 'clave.auth',
       storage: createJSONStorage(() => rememberAwareStorage),
@@ -81,3 +115,8 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 )
+
+// Any 401 from the API (revoked or deleted account) ends the local session.
+setUnauthenticatedHandler(() => {
+  if (useAuthStore.getState().user) useAuthStore.getState().signOut()
+})

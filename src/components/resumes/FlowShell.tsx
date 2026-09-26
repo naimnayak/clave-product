@@ -60,7 +60,7 @@ export function FlowShell({ title, description, step, editorial, children, onBac
                   key={i}
                   className={cn(
                     'h-[3.5px] w-5 rounded-full transition-colors',
-                    i < step.current ? 'bg-[#087F5B]' : 'bg-[#E3E7E5]'
+                    i < step.current ? 'bg-primary' : 'bg-border'
                   )}
                 />
               ))}
