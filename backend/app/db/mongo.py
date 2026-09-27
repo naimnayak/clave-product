@@ -103,6 +103,14 @@ def ingest_runs() -> AsyncCollection:
     return database()["ingest_runs"]
 
 
+def admin_audit() -> AsyncCollection:
+    return database()["admin_audit"]
+
+
+def admin_notes() -> AsyncCollection:
+    return database()["admin_notes"]
+
+
 def plans() -> AsyncCollection:
     return database()["plans"]
 
@@ -166,6 +174,12 @@ async def ensure_indexes() -> None:
     await sessions().create_index([("uid", ASCENDING), ("lastActiveAt", DESCENDING)])
     await sessions().create_index([("expireAt", ASCENDING)], expireAfterSeconds=0)
     await ai_usage().create_index([("expireAt", ASCENDING)], expireAfterSeconds=0)
+    await admin_audit().create_index([("at", DESCENDING)])
+    await admin_audit().create_index([("target", ASCENDING), ("at", DESCENDING)])
+    await admin_notes().create_index([("uid", ASCENDING), ("createdAt", DESCENDING)])
+    await users().create_index([("createdAt", DESCENDING)])
+    await users().create_index([("email", ASCENDING)])
+    await payments().create_index([("createdAt", DESCENDING)])
     await jobs().create_index([("externalId", ASCENDING)], unique=True, sparse=True)
     await jobs().create_index([("active", ASCENDING), ("postedAt", DESCENDING)])
 

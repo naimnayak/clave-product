@@ -66,7 +66,12 @@ async def get_current_user(
     )
     # Used by the rate limiter so limits apply per account rather than per IP.
     request.state.uid = user.uid
-    from app.services import sessions  # local import: sessions depends on the database layer
+    from app.db import mongo  # local imports: these depend on the database layer
+    from app.services import sessions
+
+    account = await mongo.users().find_one({"_id": user.uid}, {"status": 1})
+    if account and account.get("status") == "suspended":
+        raise ApiError(401, "ACCOUNT_SUSPENDED", "This account has been suspended. Contact support if you think this is a mistake.")
 
     request.state.session_id = await sessions.check_and_touch(user.uid, request)
     return user

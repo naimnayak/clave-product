@@ -27,6 +27,7 @@ export const paths = {
   howItWorks: '/how-it-works',
   pricing: '/pricing',
   about: '/about',
+  admin: '/admin',
 } as const
 
 export const resumePath = (id: string) => `/resumes/${id}/edit`

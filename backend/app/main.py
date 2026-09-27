@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import account, ai, applications, billing, files, job_descriptions, jobs, notifications, profile, resumes, support
+from app.api import account, admin, ai, applications, billing, files, job_descriptions, jobs, notifications, profile, resumes, support
 from app.core.config import get_settings
 from app.core.errors import UnhandledErrorMiddleware, register_error_handlers
 from app.core.limiter import limiter
@@ -116,7 +116,7 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix="/api")
-for module in (account, profile, resumes, files, ai, jobs, job_descriptions, applications, notifications, support, billing):
+for module in (account, admin, profile, resumes, files, ai, jobs, job_descriptions, applications, notifications, support, billing):
     api.include_router(module.router)
 
 

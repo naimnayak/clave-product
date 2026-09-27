@@ -33,6 +33,7 @@ interface ApiUser {
   avatarUrl: string | null
   emailVerified: boolean
   onboardingComplete: boolean
+  role?: User['role']
 }
 
 const toUser = (user: ApiUser): User => ({
@@ -41,6 +42,7 @@ const toUser = (user: ApiUser): User => ({
   email: user.email,
   avatarUrl: user.avatarUrl ?? undefined,
   emailVerified: user.emailVerified,
+  role: user.role ?? 'user',
 })
 
 const MESSAGES: Record<string, string> = {

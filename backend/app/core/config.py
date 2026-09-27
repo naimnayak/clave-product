@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
+    # Owners of the admin panel (/admin): comma-separated, verified emails. Always full admins; more
+    # admins and support staff can be added from the panel.
+    admin_emails: str = ""
     # Comma-separated list of browser origins allowed to call the API.
     allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
@@ -135,6 +138,10 @@ class Settings(BaseSettings):
     @property
     def origins(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
 
     @property
     def is_production(self) -> bool:

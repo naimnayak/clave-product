@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { LoadingState } from '@/components/ui/LoadingState'
 import { AppLayout } from '@/layouts/AppLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
 import { OnboardingLayout } from '@/layouts/OnboardingLayout'
@@ -49,6 +50,8 @@ import { WelcomePage } from '@/pages/onboarding/WelcomePage'
 import { SignupPage } from '@/pages/auth/SignupPage'
 import { GuestOnly, OnboardingOnly, RequireAuth, RequireOnboarding } from '@/routes/guards'
 import { paths } from '@/routes/navigation'
+
+const AdminApp = lazy(() => import('@/admin/AdminApp'))
 
 /** Old links keep working: forward to the new route and keep any query string. */
 function Redirect({ to }: { to: string }) {
@@ -122,6 +125,15 @@ export function AppRoutes() {
 
       {/* Authenticated */}
       <Route element={<RequireAuth />}>
+        {/* Admin panel: its own layout and bundle; the server checks the staff role on every request. */}
+        <Route
+          path={`${paths.admin}/*`}
+          element={
+            <Suspense fallback={<LoadingState label="Opening the admin panel…" className="min-h-dvh" />}>
+              <AdminApp />
+            </Suspense>
+          }
+        />
         <Route element={<OnboardingOnly />}>
           <Route element={<OnboardingLayout />}>
             <Route path={paths.onboarding}>

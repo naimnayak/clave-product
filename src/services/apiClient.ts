@@ -1,4 +1,5 @@
 import { auth } from '@/lib/firebase'
+import { toast } from '@/store/toastStore'
 import { useUpgradeModalStore } from '@/store/upgradeModalStore'
 
 /**
@@ -123,6 +124,7 @@ async function request<T>(path: string, options: RequestOptions = {}, retried = 
   )
   // An expired token is refreshed once; any other auth failure ends the session.
   if (error.code === 'TOKEN_EXPIRED' && !retried) return request<T>(path, options, true)
+  if (error.code === 'ACCOUNT_SUSPENDED') toast.error('Account suspended', error.message)
   if (response.status === 401) onUnauthenticated?.()
   // Actions the plan doesn't cover open the upgrade modal. Pro-only pages check the plan before loading,
   // so a background GET never pops the modal on its own.

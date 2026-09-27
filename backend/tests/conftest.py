@@ -27,6 +27,7 @@ os.environ.update({
     "FREE_RESUMES_PER_DEVICE": "2",
     "FREE_RESUME_GUARD_HASH_SALT": "test-salt",
     "RAZORPAY_WEBHOOK_SECRET": "whsec_test",
+    "ADMIN_EMAILS": "owner@example.com",
     "APIFY_MONTHLY_RESULT_LIMIT": "40",
     "AI_RATE_LIMIT": "100/minute",
     "RATE_LIMIT_STORAGE_URI": "memory://",
@@ -43,6 +44,8 @@ import httpx  # noqa: E402
 import pytest  # noqa: E402
 
 from app.api import account as account_api  # noqa: E402
+from app.services import accounts as accounts_service  # noqa: E402
+from app.services import admin as admin_service  # noqa: E402
 from app.core import security  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.core.limiter import limiter  # noqa: E402
@@ -80,7 +83,8 @@ def _fake_verify(token: str, **_kwargs) -> dict:
 def fake_firebase(monkeypatch):
     monkeypatch.setattr(security.firebase_auth, "verify_id_token", _fake_verify)
     monkeypatch.setattr(account_api, "firebase_login_info", lambda uid: {"providers": ["password"], "passwordUpdatedAt": None})
-    monkeypatch.setattr(account_api, "delete_firebase_user", lambda uid, attempts=3: True)
+    monkeypatch.setattr(accounts_service, "delete_firebase_user", lambda uid, attempts=3: True)
+    monkeypatch.setattr(admin_service, "revoke_firebase_sessions", lambda uid: None)
 
 
 @pytest.fixture

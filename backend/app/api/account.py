@@ -9,12 +9,12 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
 
 from app.core.errors import ApiError
-from app.core.security import CurrentUser, delete_firebase_user, firebase_login_info, get_current_user
+from app.core.security import CurrentUser, firebase_login_info, get_current_user
 from app.core.utils import iso, ok, utcnow
 from app.db import mongo
 from app.schemas.common import CamelModel, ShortText
 from app.schemas.settings import UserSettings
-from app.services import accounts, sessions, storage
+from app.services import accounts, sessions
 from app.services.notifications import notify
 
 router = APIRouter(tags=["Account"])
@@ -179,27 +179,5 @@ async def export_data(user: CurrentUser = Depends(get_current_user)):
 @router.delete("/me", status_code=204)
 async def delete_me(user: CurrentUser = Depends(get_current_user)):
     """Deletes the user's data and their login. Payment records are kept for accounting (see the Privacy Policy)."""
-    uid = user.uid
-    await storage.delete_user_objects(uid)
-    await asyncio.gather(
-        mongo.resumes().delete_many({"uid": uid}),
-        mongo.profiles().delete_many({"_id": uid}),
-        mongo.files().delete_many({"uid": uid}),
-        mongo.saved_jobs().delete_many({"uid": uid}),
-        mongo.applications().delete_many({"uid": uid}),
-        mongo.notifications().delete_many({"uid": uid}),
-        mongo.sessions().delete_many({"uid": uid}),
-        mongo.ai_usage().delete_many({"uid": uid}),
-        mongo.feedback().delete_many({"uid": uid}),
-        mongo.interview_sessions().delete_many({"uid": uid}),
-        mongo.job_descriptions().delete_many({"uid": uid}),
-        mongo.chat_sessions().delete_many({"uid": uid}),
-        mongo.user_memory().delete_many({"_id": uid}),
-        mongo.job_feed_usage().delete_many({"uid": uid}),
-        # Device claims hold only salted hashes; they are detached from the user but kept, so deleting and
-        # re-creating an account doesn't reset the device's free-resume allowance.
-        mongo.free_resume_claims().update_many({"uid": uid}, {"$set": {"uid": None}}),
-    )
-    await mongo.users().delete_one({"_id": uid})
-    await asyncio.to_thread(delete_firebase_user, uid)
+    await accounts.delete_account(user.uid)
     return Response(status_code=204)
