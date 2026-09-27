@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+*.local
+backend
+deploy/.env
+developer-handoff
+crop_tool
+*.log
+.DS_Store
