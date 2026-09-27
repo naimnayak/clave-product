@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_STORAGE_BUCKET?: string
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string
   readonly VITE_FIREBASE_APP_ID?: string
+  /** Admin panel host in production, e.g. admin.atelierdevs.tech (src/admin/host.ts). */
+  readonly VITE_ADMIN_HOST?: string
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv

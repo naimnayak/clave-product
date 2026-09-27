@@ -2,6 +2,7 @@ import { Download } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminApi } from '@/admin/adminApi'
+import { adminPath } from '@/admin/host'
 import type { UserFilters } from '@/admin/adminApi'
 import { act, ago, date, tableClass, useAdmin, useQuery } from '@/admin/lib'
 import { Pagination, PageHeader, PlanBadge, RoleBadge, StatusBadge, TableScroll } from '@/admin/ui'
@@ -116,7 +117,7 @@ export function UsersPage({ subscribers = false }: { subscribers?: boolean }) {
                     {state.data.items.map((user) => (
                       <tr key={user.id} className="hover:bg-primary/[0.03]">
                         <td>
-                          <Link to={`/admin/users/${encodeURIComponent(user.id)}`} className="flex min-w-0 items-center gap-3">
+                          <Link to={adminPath(`/users/${encodeURIComponent(user.id)}`)} className="flex min-w-0 items-center gap-3">
                             <Avatar name={user.name || user.email} src={user.avatarUrl ?? undefined} size="sm" />
                             <span className="min-w-0">
                               <span className="flex items-center gap-2 font-medium text-text">

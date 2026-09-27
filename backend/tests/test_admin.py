@@ -211,6 +211,23 @@ async def test_support_inbox_broadcast_and_jobs(client):
     assert log["total"] == 1 and log["items"][0]["details"]["sent"] == 2
 
 
+async def test_admin_api_only_answers_on_the_admin_host(client, monkeypatch):
+    from app.core.config import get_settings
+
+    owner = await signed_up(client, "owner")
+    monkeypatch.setattr(get_settings(), "admin_host", "admin.atelierdevs.tech")
+
+    main_site = await client.get("/api/admin/me", headers={**owner, "Host": "atelierdevs.tech"})
+    assert main_site.status_code == 404
+    unauthenticated = await client.get("/api/admin/me", headers={"Host": "atelierdevs.tech"})
+    assert unauthenticated.status_code == 404  # not even a 401 hint that it exists
+
+    admin_site = await client.get("/api/admin/me", headers={**owner, "Host": "admin.atelierdevs.tech:443"})
+    assert admin_site.status_code == 200
+    # The rest of the API works on both hosts (the admin panel needs /api/me, /api/auth/sync...).
+    assert (await client.get("/api/me", headers={**owner, "Host": "admin.atelierdevs.tech"})).status_code == 200
+
+
 async def test_unverified_emails_are_never_owners(client, monkeypatch):
     from tests import conftest
 

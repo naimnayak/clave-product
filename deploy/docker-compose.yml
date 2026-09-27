@@ -29,8 +29,10 @@ services:
     environment:
       APP_ENV: production
       MONGO_URL: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
-      ALLOWED_ORIGINS: https://${DOMAIN},https://www.${DOMAIN}
+      ALLOWED_ORIGINS: https://${DOMAIN},https://www.${DOMAIN},https://admin.${DOMAIN}
       WEB_BASE_URL: https://${DOMAIN}
+      # The admin API only answers on the admin subdomain.
+      ADMIN_HOST: admin.${DOMAIN}
       ENFORCE_PLAN_LIMITS: "true"
       RATE_LIMIT_STORAGE_URI: memory://
     volumes:
@@ -52,6 +54,7 @@ services:
         VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET}
         VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID}
         VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
+        VITE_ADMIN_HOST: admin.${DOMAIN}
     restart: unless-stopped
     # Localhost only; the host nginx terminates HTTPS and proxies here. 3020 is free on the server.
     ports:

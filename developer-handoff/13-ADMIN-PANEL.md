@@ -1,6 +1,11 @@
 # 13 · Admin Panel
 
-`/admin` in the web app (`src/admin/`, lazy-loaded) backed by `/api/admin/*` (`backend/app/api/admin.py`).
+Served at **https://admin.atelierdevs.tech** (`src/admin/`, lazy-loaded) and backed by `/api/admin/*` (`backend/app/api/admin.py`).
+
+- The same web image serves both hosts. On the admin host (`VITE_ADMIN_HOST`, set by docker-compose) the app shows only sign-in and the panel; `/admin` on the main site redirects there. Locally, without `VITE_ADMIN_HOST`, the panel is at `/admin`.
+- With `ADMIN_HOST` set, the backend returns 404 for `/api/admin/*` on any other host, before authentication.
+- Signing in on the admin host is separate from the main site (browsers keep logins per site).
+- `admin.<domain>` must be in Firebase → Authentication → Authorized domains and in the Google OAuth client's JavaScript origins.
 
 ## Access
 

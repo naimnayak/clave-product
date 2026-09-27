@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminApi } from '@/admin/adminApi'
+import { adminPath } from '@/admin/host'
 import { dateTime, tableClass, useQuery } from '@/admin/lib'
 import { Pagination, PageHeader, TableScroll } from '@/admin/ui'
 import { Card } from '@/components/ui/Card'
@@ -90,7 +91,7 @@ export function AuditPage() {
                         <td className="font-medium whitespace-nowrap">{entry.action}</td>
                         <td className="font-mono text-[11px]">
                           {entry.target && USER_TARGET.test(entry.action) ? (
-                            <Link to={`/admin/users/${encodeURIComponent(entry.target)}`} className="text-primary-deep hover:underline">
+                            <Link to={adminPath(`/users/${encodeURIComponent(entry.target)}`)} className="text-primary-deep hover:underline">
                               {entry.target}
                             </Link>
                           ) : (

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { adminApi } from '@/admin/adminApi'
+import { adminPath } from '@/admin/host'
 import type { AdminUserDetail } from '@/admin/adminApi'
 import { act, ago, date, dateTime, inr, tableClass, useAdmin, useQuery } from '@/admin/lib'
 import { Panel, PlanBadge, RoleBadge, StatusBadge, TableScroll, useConfirm } from '@/admin/ui'
@@ -22,7 +23,7 @@ export function UserDetailPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <Link to="/admin/users" className="inline-flex w-fit items-center gap-1.5 text-sm text-secondary hover:text-text">
+      <Link to={adminPath('/users')} className="inline-flex w-fit items-center gap-1.5 text-sm text-secondary hover:text-text">
         <ArrowLeft className="size-4" aria-hidden />
         All users
       </Link>
@@ -77,7 +78,7 @@ function UserDetail({ user, reload }: { user: AdminUserDetail; reload: () => voi
       typeToConfirm: user.email,
     })
     if (reason === null) return
-    if ((await act(() => adminApi.deleteUser(user.id, user.email, reason), 'Account deleted')) !== undefined) navigate('/admin/users')
+    if ((await act(() => adminApi.deleteUser(user.id, user.email, reason), 'Account deleted')) !== undefined) navigate(adminPath('/users'))
   }
 
   return (
@@ -261,7 +262,7 @@ function UserDetail({ user, reload }: { user: AdminUserDetail; reload: () => voi
           )}
         </Panel>
 
-        <Panel title="Payments" action={<Link to={`/admin/payments?q=${encodeURIComponent(user.email)}`} className="text-xs font-medium text-primary-deep hover:underline">Open in Payments</Link>}>
+        <Panel title="Payments" action={<Link to={adminPath(`/payments?q=${encodeURIComponent(user.email)}`)} className="text-xs font-medium text-primary-deep hover:underline">Open in Payments</Link>}>
           {user.payments.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-secondary">No payments.</p>
           ) : (

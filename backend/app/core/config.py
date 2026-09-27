@@ -12,9 +12,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
-    # Owners of the admin panel (/admin): comma-separated, verified emails. Always full admins; more
-    # admins and support staff can be added from the panel.
+    # Owners of the admin panel: comma-separated, verified emails. Always full admins; more admins and
+    # support staff can be added from the panel.
     admin_emails: str = ""
+    # When set (e.g. admin.atelierdevs.tech), /api/admin only answers requests made through that host,
+    # so the admin API isn't reachable from the main site at all. Empty = any host (local development).
+    admin_host: str = ""
     # Comma-separated list of browser origins allowed to call the API.
     allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 

@@ -1,4 +1,5 @@
 import { BookOpen, LogOut, Palette, ShieldCheck, User, UserCog } from 'lucide-react'
+import { ADMIN_HOST, adminUrl } from '@/admin/host'
 import { Avatar } from '@/components/ui/Avatar'
 import { Dropdown, DropdownItem, DropdownLabel, DropdownSeparator } from '@/components/ui/Dropdown'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
@@ -42,11 +43,16 @@ export function UserMenu() {
       <DropdownItem to={paths.guide} icon={BookOpen}>
         User Guide
       </DropdownItem>
-      {(user?.role === 'admin' || user?.role === 'support') && (
-        <DropdownItem to={paths.admin} icon={ShieldCheck}>
-          Admin panel
-        </DropdownItem>
-      )}
+      {(user?.role === 'admin' || user?.role === 'support') &&
+        (ADMIN_HOST ? (
+          <DropdownItem icon={ShieldCheck} onSelect={() => window.open(adminUrl, '_blank', 'noopener')}>
+            Admin panel
+          </DropdownItem>
+        ) : (
+          <DropdownItem to={adminUrl} icon={ShieldCheck}>
+            Admin panel
+          </DropdownItem>
+        ))}
       <DropdownItem icon={Palette} hint="Light" disabled>
         Theme
       </DropdownItem>

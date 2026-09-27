@@ -1,8 +1,8 @@
 import { ArrowLeft, Briefcase, CreditCard, Crown, Gauge, History, Inbox, Megaphone, ShieldAlert, Tags, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { Link } from 'react-router-dom'
 import type { Permission } from '@/admin/adminApi'
+import { adminPath, mainAppUrl } from '@/admin/host'
 import { adminApi } from '@/admin/adminApi'
 import { AuditPage } from '@/admin/pages/AuditPage'
 import { BroadcastPage } from '@/admin/pages/BroadcastPage'
@@ -19,7 +19,6 @@ import { ClaveLogo } from '@/components/brand/ClaveLogo'
 import { buttonStyles } from '@/components/ui/buttonStyles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingState } from '@/components/ui/LoadingState'
-import { paths } from '@/routes/navigation'
 import { cn } from '@/utils/cn'
 
 interface Item {
@@ -31,15 +30,15 @@ interface Item {
 }
 
 const NAV: Item[] = [
-  { to: '/admin', label: 'Overview', icon: Gauge, permission: 'view', end: true },
-  { to: '/admin/users', label: 'Users', icon: Users, permission: 'view', end: true },
-  { to: '/admin/subscribers', label: 'Subscribers', icon: Crown, permission: 'view' },
-  { to: '/admin/plans', label: 'Plans & pricing', icon: Tags, permission: 'view' },
-  { to: '/admin/payments', label: 'Payments', icon: CreditCard, permission: 'view' },
-  { to: '/admin/jobs', label: 'Jobs & feed', icon: Briefcase, permission: 'view' },
-  { to: '/admin/support', label: 'Support inbox', icon: Inbox, permission: 'support' },
-  { to: '/admin/broadcast', label: 'Broadcast', icon: Megaphone, permission: 'broadcast' },
-  { to: '/admin/audit', label: 'Audit log', icon: History, permission: 'view' },
+  { to: adminPath(), label: 'Overview', icon: Gauge, permission: 'view', end: true },
+  { to: adminPath('/users'), label: 'Users', icon: Users, permission: 'view', end: true },
+  { to: adminPath('/subscribers'), label: 'Subscribers', icon: Crown, permission: 'view' },
+  { to: adminPath('/plans'), label: 'Plans & pricing', icon: Tags, permission: 'view' },
+  { to: adminPath('/payments'), label: 'Payments', icon: CreditCard, permission: 'view' },
+  { to: adminPath('/jobs'), label: 'Jobs & feed', icon: Briefcase, permission: 'view' },
+  { to: adminPath('/support'), label: 'Support inbox', icon: Inbox, permission: 'support' },
+  { to: adminPath('/broadcast'), label: 'Broadcast', icon: Megaphone, permission: 'broadcast' },
+  { to: adminPath('/audit'), label: 'Audit log', icon: History, permission: 'view' },
 ]
 
 /** /admin/*: the Clave admin panel, lazy-loaded so it never ships in the main app bundle. */
@@ -54,9 +53,9 @@ export default function AdminApp() {
         title="No admin access"
         description="This account isn’t an admin or support member. Ask an owner to give you a role."
         action={
-          <Link to={paths.dashboard} className={buttonStyles({ variant: 'secondary' })}>
+          <a href={mainAppUrl} className={buttonStyles({ variant: 'secondary' })}>
             Back to Clave
-          </Link>
+          </a>
         }
         className="min-h-dvh justify-center"
       />
@@ -97,10 +96,10 @@ export default function AdminApp() {
             <div className="mt-1">
               <RoleBadge role={me.role} owner={me.owner} />
             </div>
-            <Link to={paths.dashboard} className="mt-3 inline-flex items-center gap-1.5 text-secondary hover:text-text">
+            <a href={mainAppUrl} className="mt-3 inline-flex items-center gap-1.5 text-secondary hover:text-text">
               <ArrowLeft className="size-3.5" aria-hidden />
               Back to Clave
-            </Link>
+            </a>
           </div>
         </aside>
 
@@ -130,7 +129,7 @@ export default function AdminApp() {
               {me.permissions.includes('support') && <Route path="support" element={<SupportPage />} />}
               {me.permissions.includes('broadcast') && <Route path="broadcast" element={<BroadcastPage />} />}
               <Route path="audit" element={<AuditPage />} />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
+              <Route path="*" element={<Navigate to={adminPath()} replace />} />
             </Routes>
           </main>
         </div>

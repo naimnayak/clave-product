@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminApi } from '@/admin/adminApi'
+import { adminPath } from '@/admin/host'
 import type { AdminPayment } from '@/admin/adminApi'
 import { act, dateTime, inr, tableClass, useAdmin, useQuery } from '@/admin/lib'
 import { Pagination, PageHeader, StatusBadge, TableScroll } from '@/admin/ui'
@@ -84,7 +85,7 @@ export function PaymentsPage() {
                       <tr key={payment.id}>
                         <td className="whitespace-nowrap text-secondary">{dateTime(payment.paidAt ?? payment.createdAt)}</td>
                         <td>
-                          <Link to={`/admin/users/${encodeURIComponent(payment.uid)}`} className="text-primary-deep hover:underline">
+                          <Link to={adminPath(`/users/${encodeURIComponent(payment.uid)}`)} className="text-primary-deep hover:underline">
                             {payment.userEmail ?? payment.uid}
                           </Link>
                         </td>

@@ -23,7 +23,8 @@ from app.services.apify_jobs import monthly_results_used
 from app.services.notifications import notify
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/admin", tags=["Admin"])
+# The host check runs before authentication, so the admin API doesn't even reveal itself elsewhere.
+router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(admin.require_admin_host)])
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────────

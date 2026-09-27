@@ -63,6 +63,16 @@ class Staff:
         return permission in self.permissions
 
 
+def require_admin_host(request: Request) -> None:
+    """With ADMIN_HOST set, the admin API only exists on the admin subdomain (404 everywhere else)."""
+    expected = get_settings().admin_host.strip().lower()
+    if not expected:
+        return
+    host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+    if host != expected:
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "Not found.")
+
+
 async def get_staff(request: Request, user: CurrentUser = Depends(get_current_user)) -> Staff:
     """Any admin-panel request. Rejects everyone who isn't admin or support staff."""
     doc = await mongo.users().find_one({"_id": user.uid}, {"email": 1, "emailVerified": 1, "role": 1})

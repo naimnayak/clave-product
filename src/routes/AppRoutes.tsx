@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { ADMIN_HOST, adminUrl, onAdminHost } from '@/admin/host'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { AppLayout } from '@/layouts/AppLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
@@ -53,6 +54,7 @@ import { paths } from '@/routes/navigation'
 
 const AdminApp = lazy(() => import('@/admin/AdminApp'))
 
+
 /** Old links keep working: forward to the new route and keep any query string. */
 function Redirect({ to }: { to: string }) {
   const { search } = useLocation()
@@ -91,7 +93,39 @@ function GuideEntry() {
   )
 }
 
+const adminPanel = (
+  <Suspense fallback={<LoadingState label="Opening the admin panel…" className="min-h-dvh" />}>
+    <AdminApp />
+  </Suspense>
+)
+
+/** Leaves the SPA for another origin (the admin subdomain). */
+function ExternalRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    window.location.replace(to)
+  }, [to])
+  return <LoadingState label="Opening the admin panel…" className="min-h-dvh" />
+}
+
+/** admin.<domain>: only sign-in and the admin panel, nothing else from the product. */
+function AdminHostRoutes() {
+  return (
+    <Routes>
+      <Route element={<GuestOnly />}>
+        <Route element={<AuthLayout />}>
+          <Route path={paths.login} element={<LoginPage />} />
+          <Route path={paths.forgotPassword} element={<ForgotPasswordPage />} />
+        </Route>
+      </Route>
+      <Route element={<RequireAuth />}>
+        <Route path="/*" element={adminPanel} />
+      </Route>
+    </Routes>
+  )
+}
+
 export function AppRoutes() {
+  if (onAdminHost) return <AdminHostRoutes />
   return (
     <Routes>
       {/* Public Marketing with persistent navbar and smooth transitions */}
@@ -125,15 +159,8 @@ export function AppRoutes() {
 
       {/* Authenticated */}
       <Route element={<RequireAuth />}>
-        {/* Admin panel: its own layout and bundle; the server checks the staff role on every request. */}
-        <Route
-          path={`${paths.admin}/*`}
-          element={
-            <Suspense fallback={<LoadingState label="Opening the admin panel…" className="min-h-dvh" />}>
-              <AdminApp />
-            </Suspense>
-          }
-        />
+        {/* Admin panel: its own bundle, on the admin subdomain in production (src/admin/host.ts). */}
+        <Route path={`${paths.admin}/*`} element={ADMIN_HOST ? <ExternalRedirect to={adminUrl} /> : adminPanel} />
         <Route element={<OnboardingOnly />}>
           <Route element={<OnboardingLayout />}>
             <Route path={paths.onboarding}>

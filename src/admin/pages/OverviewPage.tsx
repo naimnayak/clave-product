@@ -1,6 +1,7 @@
 import { RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { adminApi } from '@/admin/adminApi'
+import { adminPath } from '@/admin/host'
 import { inr, num, useQuery } from '@/admin/lib'
 import { BarChart, PageHeader, Panel, StatCard } from '@/admin/ui'
 import { Button } from '@/components/ui/Button'
@@ -69,19 +70,19 @@ function Dashboard({ data }: { data: import('@/admin/adminApi').Overview }) {
         <ul className="divide-y divide-border text-sm">
           <li className="flex items-center justify-between px-4 py-3">
             <span>Unanswered support messages</span>
-            <Link to="/admin/support" className="font-semibold text-primary-deep hover:underline">
+            <Link to={adminPath('/support')} className="font-semibold text-primary-deep hover:underline">
               {num(support.openMessages)}
             </Link>
           </li>
           <li className="flex items-center justify-between px-4 py-3">
             <span>Pro plans ending in the next 7 days</span>
-            <Link to="/admin/subscribers?sort=proEnd" className="font-semibold text-primary-deep hover:underline">
+            <Link to={adminPath('/subscribers?sort=proEnd')} className="font-semibold text-primary-deep hover:underline">
               {num(subscriptions.proExpiring7d)}
             </Link>
           </li>
           <li className="flex items-center justify-between px-4 py-3">
             <span>Feedback this week</span>
-            <Link to="/admin/support?tab=feedback" className="font-semibold text-primary-deep hover:underline">
+            <Link to={adminPath('/support?tab=feedback')} className="font-semibold text-primary-deep hover:underline">
               {num(support.feedback7d)}
             </Link>
           </li>
