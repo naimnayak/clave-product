@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Check, ChevronDown } from 'lucide-react'
+import { startCheckout } from '@/services/payment.service'
+import { useAuthStore } from '@/store/authStore'
 import GradientWaves from '@/components/effects/GradientWaves'
 import { LandingContainer } from '@/components/landing/LandingContainer'
 import { LandingFooter } from '@/components/landing/LandingFooter'
@@ -11,10 +13,10 @@ import { ScrollReveal } from '@/components/transitions/ScrollReveal'
 
 const COMPARISON_ROWS = [
   {
-    feature: 'Number of resumes',
-    free: '1',
+    feature: 'Resumes',
+    free: '5',
     unlimited: 'Unlimited',
-    single: '1',
+    single: '+1 per purchase',
   },
   {
     feature: 'ATS-friendly templates',
@@ -23,40 +25,40 @@ const COMPARISON_ROWS = [
     single: true,
   },
   {
-    feature: 'AI resume generation',
-    free: false,
+    feature: 'AI resume generation, tailoring and ATS analysis',
+    free: true,
     unlimited: true,
     single: true,
   },
   {
-    feature: 'ATS analysis',
-    free: 'Basic',
-    unlimited: 'Advanced',
+    feature: 'AI actions per day',
+    free: '15',
+    unlimited: '300',
+    single: '15',
+  },
+  {
+    feature: 'Personal job feed (LinkedIn, Indeed, Naukri, Internshala, Foundit)',
+    free: 'Top 3 preview',
+    unlimited: true,
+    single: 'Top 3 preview',
+  },
+  {
+    feature: 'Career assistant messages per day',
+    free: '10',
+    unlimited: '100',
+    single: '10',
+  },
+  {
+    feature: 'Assistant remembers your goals',
+    free: true,
+    unlimited: true,
     single: true,
   },
   {
-    feature: 'Resume tailoring',
-    free: 'Limited',
+    feature: 'Mock interviews',
+    free: '1',
     unlimited: 'Unlimited',
-    single: true,
-  },
-  {
-    feature: 'Job recommendations',
-    free: 'Limited',
-    unlimited: 'Personalized',
-    single: true,
-  },
-  {
-    feature: 'Premium templates',
-    free: false,
-    unlimited: true,
-    single: true,
-  },
-  {
-    feature: 'Priority support',
-    free: false,
-    unlimited: true,
-    single: false,
+    single: '1',
   },
 ]
 
@@ -64,22 +66,22 @@ const FAQ_ITEMS = [
   {
     question: 'Can I use Clave for free?',
     answer:
-      'Yes. The Free plan lets you create one resume and explore the core Clave experience without a subscription.',
+      'Yes. The Free plan includes 5 resumes, AI generation, tailoring and ATS analysis, the career assistant and one mock interview. Free resumes are limited per device as well as per account.',
   },
   {
     question: 'What does the ₹49 plan include?',
     answer:
-      'The Single Resume plan gives you everything you need to create one complete, polished resume, including AI generation and ATS analysis.',
+      'One more resume on top of your free ones, with the same AI generation, tailoring and ATS analysis. The credit never expires.',
   },
   {
-    question: 'What does unlimited mean?',
+    question: 'What do I get with Clave Pro?',
     answer:
-      'Monthly Unlimited allows you to create and tailor as many resumes as you need during your active subscription.',
+      'Unlimited resumes and mock interviews, higher daily AI limits, and a personal job feed: Clave searches LinkedIn, Indeed, Naukri, Internshala and Foundit for roles that match your resume and the job descriptions you use.',
   },
   {
     question: 'Can I cancel the ₹199 monthly plan?',
     answer:
-      'There’s nothing to cancel. Monthly Unlimited is a one-time payment for 30 days and never renews automatically. If you haven’t used it, you can ask for a full refund within 7 days (see our Refund & Cancellation Policy).',
+      'There’s nothing to cancel. Clave Pro is a one-time payment for 30 days and never renews automatically. If you haven’t used it, you can ask for a full refund within 7 days (see our Refund & Cancellation Policy).',
   },
   {
     question: 'Can I create different resumes for different jobs?',
@@ -90,6 +92,8 @@ const FAQ_ITEMS = [
 
 export function PricingPage() {
   const openUpgradeModal = useUpgradeModalStore((s) => s.openUpgradeModal)
+  const signedIn = useAuthStore((s) => Boolean(s.user))
+  const navigate = useNavigate()
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0)
 
   const toggleFaq = (index: number) => {
@@ -150,7 +154,7 @@ export function PricingPage() {
             </h1>
 
             <p className="animate-entrance-subtext mt-2 text-xs sm:text-[14px] leading-relaxed text-[#A7B5B1]">
-              Start free, pay only when you need more, or create unlimited resumes with Clave.
+              Start free, pay only when you need more, or go Pro for jobs matched to your resume.
             </p>
           </div>
 
@@ -183,11 +187,11 @@ export function PricingPage() {
                   <ul className="space-y-2 text-xs sm:text-[13px] text-[#F5F7F6]">
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Create 1 resume</span>
+                      <span>Create 5 resumes</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Basic resume builder</span>
+                      <span>AI generation, tailoring and ATS analysis</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
@@ -195,11 +199,11 @@ export function PricingPage() {
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Basic ATS analysis</span>
+                      <span>Career assistant, 10 messages a day</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Limited job recommendations</span>
+                      <span>1 mock interview</span>
                     </li>
                   </ul>
                 </div>
@@ -216,9 +220,9 @@ export function PricingPage() {
               </div>
 
               <div>
-                <h2 className="text-lg sm:text-xl font-semibold text-[#F5F7F6]">Monthly Unlimited</h2>
+                <h2 className="text-lg sm:text-xl font-semibold text-[#F5F7F6]">Clave Pro</h2>
                 <p className="mt-0.5 text-xs sm:text-sm text-[#A7B5B1]">
-                  For active job seekers creating & tailoring resumes regularly.
+                  For active job seekers: jobs matched to you, and no limits on resumes.
                 </p>
 
                 <div className="mt-4 flex items-baseline gap-1.5">
@@ -229,46 +233,38 @@ export function PricingPage() {
                 <div className="mt-4.5">
                   <button
                     type="button"
-                    onClick={openUpgradeModal}
+                    onClick={() => (signedIn ? openUpgradeModal() : navigate(paths.signup))}
                     className="inline-flex h-10 sm:h-11 w-full items-center justify-center gap-2 rounded-full bg-[#087F5B] px-4 text-xs sm:text-sm font-semibold text-white shadow-xs transition-all hover:bg-[#056B4D] active:scale-[0.99] cursor-pointer"
                   >
-                    <span>Go unlimited</span>
+                    <span>Get Clave Pro</span>
                     <ArrowRight className="size-4" aria-hidden />
                   </button>
                 </div>
 
                 <div className="mt-5 border-t border-[#19352F]/80 pt-4">
                   <p className="text-[11px] font-semibold tracking-wider text-[#10B981] uppercase mb-3">
-                    Everything in Single, plus
+                    Everything in Free, plus
                   </p>
                   <ul className="space-y-2.5 text-xs sm:text-[13.5px] text-[#F5F7F6]">
                     <li className="flex items-center gap-2.5">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span className="font-medium text-white">Unlimited resume creation</span>
+                      <span className="font-medium text-white">Personal job feed matched to your resume</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>AI-powered resume generation</span>
+                      <span>Jobs from LinkedIn, Indeed, Naukri, Internshala and Foundit</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span className="font-medium text-white">Unlimited resume tailoring</span>
+                      <span className="font-medium text-white">Unlimited resumes</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Access to all premium templates</span>
+                      <span className="font-medium text-white">Unlimited mock interviews</span>
                     </li>
                     <li className="flex items-center gap-2.5">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span className="font-medium text-white">Advanced ATS analysis</span>
-                    </li>
-                    <li className="flex items-center gap-2.5">
-                      <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Personalized job recommendations</span>
-                    </li>
-                    <li className="flex items-center gap-2.5">
-                      <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span className="font-medium text-white">Priority support</span>
+                      <span>300 AI actions and 100 assistant messages a day</span>
                     </li>
                   </ul>
                 </div>
@@ -283,16 +279,17 @@ export function PricingPage() {
 
                 <div className="mt-3.5 flex items-baseline gap-1.5">
                   <span className="text-3xl sm:text-4xl font-bold tracking-tight text-[#F5F7F6]">₹49</span>
-                  <span className="text-xs text-[#A7B5B1]">for 1 resume</span>
+                  <span className="text-xs text-[#A7B5B1]">for 1 more resume</span>
                 </div>
 
                 <div className="mt-4">
-                  <Link
-                    to={paths.createResume}
+                  <button
+                    type="button"
+                    onClick={() => (signedIn ? void startCheckout('single') : navigate(paths.signup))}
                     className="inline-flex h-9 sm:h-10 w-full items-center justify-center rounded-full border border-[#10B981]/40 bg-white/[0.06] px-3.5 text-xs sm:text-sm font-medium text-[#F5F7F6] transition-all hover:bg-white/[0.1] hover:border-[#10B981]/70 active:scale-[0.99] cursor-pointer"
                   >
-                    Create a resume
-                  </Link>
+                    Buy one resume
+                  </button>
                 </div>
 
                 <div className="mt-5 border-t border-[#19352F]/70 pt-4">
@@ -302,23 +299,15 @@ export function PricingPage() {
                   <ul className="space-y-2 text-xs sm:text-[13px] text-[#F5F7F6]">
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>1 complete resume</span>
+                      <span>1 more complete resume</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>AI-powered resume generation</span>
+                      <span>AI generation, tailoring and ATS analysis</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>ATS analysis</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Access to premium templates</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="size-3.5 text-[#10B981] shrink-0" aria-hidden />
-                      <span>Job recommendations</span>
+                      <span>The credit never expires</span>
                     </li>
                   </ul>
                 </div>
@@ -350,7 +339,7 @@ export function PricingPage() {
                         Free
                       </th>
                       <th scope="col" className="pb-3.5 text-center font-semibold text-xs sm:text-sm text-[#10B981] w-1/5">
-                        Monthly Unlimited
+                        Clave Pro
                       </th>
                       <th scope="col" className="pb-3.5 text-center font-semibold text-xs sm:text-sm text-[#F5F7F6] w-1/5">
                         Single Resume

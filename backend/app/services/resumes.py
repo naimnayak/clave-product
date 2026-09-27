@@ -59,13 +59,11 @@ async def create(
     tailored_for: str | None = None,
     status: str | None = None,
     request: Request | None = None,
-    consume_credit: bool = True,
 ) -> dict[str, Any]:
-    """Saves a new resume. Everything except a user's own uploaded resume counts against their plan."""
+    """Saves a new resume. Every saved resume, uploads included, counts against the user's plan."""
     body = normalize(fields)
-    if consume_credit:
-        await quota.consume_resume_credit(uid, request)
-    else:
+    await quota.consume_resume_credit(uid, request)
+    if source_type == "upload":
         await track_usage(uid, "uploadsSaved")
     now = utcnow()
     doc = {

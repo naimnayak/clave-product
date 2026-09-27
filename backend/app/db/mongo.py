@@ -8,6 +8,7 @@ from datetime import timedelta
 from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.errors import OperationFailure
 
 from app.core.config import get_settings
 
@@ -102,8 +103,38 @@ def ingest_runs() -> AsyncCollection:
     return database()["ingest_runs"]
 
 
+def plans() -> AsyncCollection:
+    return database()["plans"]
+
+
+def job_descriptions() -> AsyncCollection:
+    return database()["job_descriptions"]
+
+
+def job_feed_usage() -> AsyncCollection:
+    return database()["job_feed_usage"]
+
+
+def chat_sessions() -> AsyncCollection:
+    return database()["chat_sessions"]
+
+
+def user_memory() -> AsyncCollection:
+    return database()["user_memory"]
+
+
 async def ping() -> None:
     await client().admin.command("ping")
+
+
+async def _ttl_index(collection: AsyncCollection, field: str, seconds: int) -> None:
+    """Creates a TTL index, or updates its expiry in place when it already exists with another value."""
+    try:
+        await collection.create_index([(field, ASCENDING)], expireAfterSeconds=seconds)
+    except OperationFailure as exc:
+        if exc.code not in (85, 86):  # IndexOptionsConflict / IndexKeySpecsConflict
+            raise
+        await database().command({"collMod": collection.name, "index": {"keyPattern": {field: 1}, "expireAfterSeconds": seconds}})
 
 
 async def ensure_indexes() -> None:
@@ -118,10 +149,17 @@ async def ensure_indexes() -> None:
     await payments().create_index([("uid", ASCENDING)])
     await payments().create_index([("paymentId", ASCENDING)], unique=True, sparse=True)
     await interview_sessions().create_index([("uid", ASCENDING), ("createdAt", DESCENDING)])
-    await job_search_cache().create_index([("createdAt", ASCENDING)], expireAfterSeconds=6 * 60 * 60)
+    await _ttl_index(job_search_cache(), "createdAt", settings.job_feed_cache_hours * 60 * 60)
     await free_resume_claims().create_index([("uid", ASCENDING)])
-    await free_resume_claims().create_index([("ipHash", ASCENDING)])
-    await free_resume_claims().create_index([("fingerprintHash", ASCENDING)], sparse=True)
+    await free_resume_claims().create_index([("pairHash", ASCENDING)], sparse=True)
+    await free_resume_claims().create_index([("deviceHash", ASCENDING)], sparse=True)
+    await job_descriptions().create_index([("uid", ASCENDING), ("hash", ASCENDING)], unique=True)
+    await job_descriptions().create_index([("uid", ASCENDING), ("lastUsedAt", DESCENDING)])
+    # One open conversation per user: concurrent first messages can't create two.
+    await chat_sessions().create_index([("uid", ASCENDING)], unique=True, partialFilterExpression={"status": "active"}, name="one_active_chat")
+    await chat_sessions().create_index([("status", ASCENDING), ("closesAt", ASCENDING)])
+    # Safety net: transcripts never outlive a failed summary by more than a few days.
+    await chat_sessions().create_index([("purgeAt", ASCENDING)], expireAfterSeconds=0)
     await applications().create_index([("uid", ASCENDING), ("jobId", ASCENDING)], unique=True)
     await notifications().create_index([("uid", ASCENDING), ("createdAt", DESCENDING)])
     await notifications().create_index([("expireAt", ASCENDING)], expireAfterSeconds=0)

@@ -162,6 +162,9 @@ async def export_data(user: CurrentUser = Depends(get_current_user)):
         "savedJobs": await collect(mongo.saved_jobs(), {"uid": uid}),
         "applications": await collect(mongo.applications(), {"uid": uid}),
         "interviewSessions": await collect(mongo.interview_sessions(), {"uid": uid}),
+        "jobDescriptions": await collect(mongo.job_descriptions(), {"uid": uid}),
+        "assistantConversations": await collect(mongo.chat_sessions(), {"uid": uid}),
+        "assistantMemory": await collect(mongo.user_memory(), {"_id": uid}),
         "notifications": await collect(mongo.notifications(), {"uid": uid}),
         "uploads": await collect(mongo.files(), {"uid": uid}),
         "payments": await collect(mongo.payments(), {"uid": uid}),
@@ -189,7 +192,13 @@ async def delete_me(user: CurrentUser = Depends(get_current_user)):
         mongo.ai_usage().delete_many({"uid": uid}),
         mongo.feedback().delete_many({"uid": uid}),
         mongo.interview_sessions().delete_many({"uid": uid}),
-        mongo.free_resume_claims().delete_many({"uid": uid}),
+        mongo.job_descriptions().delete_many({"uid": uid}),
+        mongo.chat_sessions().delete_many({"uid": uid}),
+        mongo.user_memory().delete_many({"_id": uid}),
+        mongo.job_feed_usage().delete_many({"uid": uid}),
+        # Device claims hold only salted hashes; they are detached from the user but kept, so deleting and
+        # re-creating an account doesn't reset the device's free-resume allowance.
+        mongo.free_resume_claims().update_many({"uid": uid}, {"$set": {"uid": None}}),
     )
     await mongo.users().delete_one({"_id": uid})
     await asyncio.to_thread(delete_firebase_user, uid)

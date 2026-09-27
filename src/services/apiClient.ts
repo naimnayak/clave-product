@@ -45,6 +45,25 @@ export function rotateSessionId(): void {
   localStorage.setItem(SESSION_KEY, crypto.randomUUID())
 }
 
+/**
+ * A random id for this browser that never rotates, sent as X-Clave-Device. The backend caps free resumes
+ * per device (and per device + network), so other devices on the same Wi-Fi are never affected.
+ */
+const DEVICE_KEY = 'clave.device-id'
+
+function deviceId(): string {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY)
+    if (!id) {
+      id = crypto.randomUUID()
+      localStorage.setItem(DEVICE_KEY, id)
+    }
+    return id
+  } catch {
+    return '' // storage blocked: the backend falls back to network + browser signature
+  }
+}
+
 /** The auth store registers how to sign out when the backend rejects the session. */
 export function setUnauthenticatedHandler(handler: () => void) {
   onUnauthenticated = handler
@@ -67,6 +86,8 @@ async function idToken(forceRefresh: boolean): Promise<string | null> {
 async function request<T>(path: string, options: RequestOptions = {}, retried = false): Promise<T> {
   const { method = 'GET', body, form, timeoutMs = DEFAULT_TIMEOUT_MS } = options
   const headers: Record<string, string> = { 'X-Clave-Session': sessionId() }
+  const device = deviceId()
+  if (device) headers['X-Clave-Device'] = device
   const token = await idToken(retried)
   if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -103,7 +124,11 @@ async function request<T>(path: string, options: RequestOptions = {}, retried = 
   // An expired token is refreshed once; any other auth failure ends the session.
   if (error.code === 'TOKEN_EXPIRED' && !retried) return request<T>(path, options, true)
   if (response.status === 401) onUnauthenticated?.()
-  if (error.code === 'PLAN_LIMIT_REACHED') useUpgradeModalStore.getState().openUpgradeModal()
+  // Actions the plan doesn't cover open the upgrade modal. Pro-only pages check the plan before loading,
+  // so a background GET never pops the modal on its own.
+  if (error.code === 'PLAN_LIMIT_REACHED' || (error.code === 'PRO_REQUIRED' && method !== 'GET')) {
+    useUpgradeModalStore.getState().openUpgradeModal()
+  }
   throw error
 }
 

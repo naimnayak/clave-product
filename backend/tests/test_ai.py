@@ -1,10 +1,16 @@
 """AI endpoints with the model mocked: daily allowance, refunds on failure, personalization and interviews."""
 
+import json
+from datetime import timedelta
+
 import pytest
 
+from app.core.utils import utcnow
+from app.db import mongo
 from app.services import ai_tasks
+from app.services import chat as chat_service
 from app.services.ai_client import AIResponseError, AIUnavailableError
-from tests.helpers import error_code, signed_up
+from tests.helpers import error_code, resume_body, signed_up
 
 TRANSFORM = {"text": "Built pages", "action": "improve", "context": {"role": "Frontend Developer", "skills": ["React"]}}
 
@@ -24,7 +30,8 @@ async def test_daily_limit_and_usage(client, fake_transform):
         assert response.status_code == 200
         assert response.json()["data"]["text"] == "Built pages (improved)"
 
-    assert (await client.get("/api/ai/usage", headers=headers)).json()["data"] == {"limit": 3, "used": 3}
+    usage = (await client.get("/api/ai/usage", headers=headers)).json()["data"]
+    assert usage == {"limit": 3, "used": 3, "chatLimit": 4, "chatUsed": 0, "isPro": False}
 
     blocked = await client.post("/api/ai/transform", json=TRANSFORM, headers=headers)
     assert blocked.status_code == 429 and error_code(blocked) == "AI_DAILY_LIMIT_REACHED"
@@ -43,29 +50,93 @@ async def test_failed_calls_are_refunded(client, monkeypatch):
         assert (await client.get("/api/ai/usage", headers=headers)).json()["data"]["used"] == 0
 
 
-async def test_chat_respects_personalize_setting(client, monkeypatch):
-    seen: list = []
+@pytest.fixture
+def fake_chat(monkeypatch):
+    """Records what the assistant was given each turn."""
+    calls: list[dict] = []
 
-    async def chat(message, context, *, history, profile):
-        seen.append(profile)
-        return {"reply": f"echo: {message}", "suggestedActions": []}
+    async def chat(message, *, history, user_context, extra_context=""):
+        calls.append({"message": message, "history": history, "context": json.loads(user_context)})
+        return {"reply": f"echo: {message}", "suggestedActions": ["Next?"]}
+
+    async def summarize_memory(transcript, existing):
+        return {"facts": [f"Asked: {t['content']}" for t in transcript if t["role"] == "user"], "summary": "Preparing for data roles."}
 
     monkeypatch.setattr(ai_tasks, "chat", chat)
+    monkeypatch.setattr(ai_tasks, "summarize_memory", summarize_memory)
+    return calls
+
+
+async def test_chat_session_carries_context_and_history(client, fake_chat):
     headers = await signed_up(client, "chatter")
     await client.put("/api/profile", json={"name": "Chatter", "targetRoles": ["Data Analyst"]}, headers=headers)
+    await client.post("/api/resumes", json=resume_body("Data CV"), headers=headers)
 
-    on = await client.post("/api/ai/chat", json={"message": "Hi", "history": [{"role": "assistant", "content": "Hello"}]}, headers=headers)
-    assert on.status_code == 200
-    assert on.json()["data"] == {"reply": "echo: Hi", "suggestedActions": [], "personalized": True}
-    assert seen[-1]["targetRoles"] == ["Data Analyst"]
+    assert (await client.get("/api/ai/chat/session", headers=headers)).json()["data"] is None
+    first = (await client.post("/api/ai/chat", json={"message": "Hi"}, headers=headers)).json()["data"]
+    assert first["reply"] == "echo: Hi" and first["personalized"] is True
+    assert [m["role"] for m in first["session"]["messages"]] == ["user", "assistant"]
+    context = fake_chat[-1]["context"]
+    assert context["careerProfile"]["targetRoles"] == ["Data Analyst"]
+    assert context["latestResume"]["name"] == "Data CV" and context["plan"] == "Free"
 
+    # The next turn (even from another device, no client history) continues the same conversation.
+    await client.post("/api/ai/chat", json={"message": "And then?"}, headers=headers)
+    assert [t["content"] for t in fake_chat[-1]["history"]] == ["Hi", "echo: Hi"]
+    session = (await client.get("/api/ai/chat/session", headers=headers)).json()["data"]
+    assert len(session["messages"]) == 4 and session["id"] == first["session"]["id"]
+
+    usage = (await client.get("/api/ai/usage", headers=headers)).json()["data"]
+    assert usage["chatUsed"] == 2 and usage["used"] == 0  # chat has its own daily cap
+
+
+async def test_new_chat_saves_memory_for_next_session(client, fake_chat):
+    headers = await signed_up(client, "rememberer")
+    await client.post("/api/ai/chat", json={"message": "I want to become a data analyst"}, headers=headers)
+    assert (await client.post("/api/ai/chat/session/end", headers=headers)).status_code == 200
+    assert await mongo.chat_sessions().count_documents({"uid": "rememberer"}) == 0  # transcript deleted
+
+    memory = (await client.get("/api/ai/memory", headers=headers)).json()["data"]
+    assert memory["facts"] == ["Asked: I want to become a data analyst"]
+
+    await client.post("/api/ai/chat", json={"message": "Hello again"}, headers=headers)
+    assert fake_chat[-1]["history"] == []
+    assert fake_chat[-1]["context"]["memoryFromPastConversations"]["facts"] == memory["facts"]
+
+    assert (await client.delete("/api/ai/memory", headers=headers)).status_code == 204
+    assert (await client.get("/api/ai/memory", headers=headers)).json()["data"]["facts"] == []
+
+
+async def test_sessions_close_after_48_hours(client, fake_chat):
+    headers = await signed_up(client, "sleeper")
+    await client.post("/api/ai/chat", json={"message": "Remember my goal"}, headers=headers)
+    await mongo.chat_sessions().update_one({"uid": "sleeper"}, {"$set": {"closesAt": utcnow() - timedelta(minutes=1)}})
+
+    assert await chat_service.close_due_sessions() == 1
+    assert (await mongo.user_memory().find_one({"_id": "sleeper"}))["facts"] == ["Asked: Remember my goal"]
+    assert (await client.get("/api/ai/chat/session", headers=headers)).json()["data"] is None
+
+
+async def test_chat_without_personalization_shares_nothing(client, fake_chat):
+    headers = await signed_up(client, "private")
+    await client.put("/api/profile", json={"name": "Private", "targetRoles": ["Designer"]}, headers=headers)
     settings = (await client.get("/api/me/settings", headers=headers)).json()["data"]
     settings["privacy"]["personalizeAi"] = False
     await client.put("/api/me/settings", json=settings, headers=headers)
 
-    off = await client.post("/api/ai/chat", json={"message": "Hi again"}, headers=headers)
-    assert off.json()["data"]["personalized"] is False
-    assert seen[-1] is None
+    reply = (await client.post("/api/ai/chat", json={"message": "Hi"}, headers=headers)).json()["data"]
+    assert reply["personalized"] is False
+    assert "careerProfile" not in fake_chat[-1]["context"]
+    await client.post("/api/ai/chat/session/end", headers=headers)
+    assert await mongo.user_memory().find_one({"_id": "private"}) is None
+
+
+async def test_chat_daily_cap(client, fake_chat):
+    headers = await signed_up(client, "talker")
+    for i in range(4):  # CHAT_DAILY_LIMIT_FREE=4 in conftest
+        assert (await client.post("/api/ai/chat", json={"message": f"m{i}"}, headers=headers)).status_code == 200
+    blocked = await client.post("/api/ai/chat", json={"message": "one more"}, headers=headers)
+    assert blocked.status_code == 429 and error_code(blocked) == "AI_DAILY_LIMIT_REACHED"
 
 
 async def test_mock_interview_flow(client, monkeypatch):
@@ -98,3 +169,11 @@ async def test_mock_interview_flow(client, monkeypatch):
     other = await signed_up(client, "snoop")
     assert (await client.get(f"/api/ai/interview/sessions/{session_id}", headers=other)).status_code == 404
     assert (await client.delete(f"/api/ai/interview/sessions/{session_id}", headers=headers)).status_code == 204
+
+    # FREE_MOCK_INTERVIEWS=1: the next one needs Pro (deleting doesn't give it back).
+    again = await client.post("/api/ai/interview/sessions", json={"role": "Backend Developer"}, headers=headers)
+    assert again.status_code == 402 and error_code(again) == "PRO_REQUIRED"
+    await mongo.users().update_one(
+        {"_id": "candidate"}, {"$set": {"subscription.plan": "monthly", "subscription.currentPeriodEnd": utcnow() + timedelta(days=5)}}
+    )
+    assert (await client.post("/api/ai/interview/sessions", json={"role": "Backend Developer"}, headers=headers)).status_code == 201

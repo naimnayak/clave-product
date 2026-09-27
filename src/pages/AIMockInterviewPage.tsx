@@ -10,6 +10,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { Select } from '@/components/ui/Select'
 import { TagInput } from '@/components/ui/TagInput'
 import { Textarea } from '@/components/ui/Textarea'
+import { useSubscription } from '@/hooks/useSubscription'
 import { ApiError } from '@/services/apiClient'
 import { answerQuestion, deleteInterview, getInterview, listInterviews, startInterview } from '@/services/interview.service'
 import type { InterviewEvaluation, InterviewSession } from '@/services/interview.service'
@@ -97,6 +98,9 @@ function Setup({ onStarted, onOpen }: { onStarted: (session: InterviewSession) =
   const [roleError, setRoleError] = useState<string>()
   const [starting, setStarting] = useState(false)
   const [recent, setRecent] = useState<InterviewSession[] | null>(null)
+  const { subscription, refresh: refreshPlan } = useSubscription()
+  const freeAllowance = subscription && !subscription.isPro && subscription.limitsEnforced ? subscription.limits.mockInterviews : null
+  const freeLeft = typeof freeAllowance === 'number' ? Math.max(0, freeAllowance - subscription!.mockInterviewsUsed) : null
 
   useEffect(() => {
     getProfile().then(
@@ -118,8 +122,10 @@ function Setup({ onStarted, onOpen }: { onStarted: (session: InterviewSession) =
     setStarting(true)
     try {
       onStarted(await startInterview({ role: role.trim(), level, focusSkills: skills, totalQuestions: length }))
+      void refreshPlan() // the free allowance just changed
     } catch (error) {
-      toast.error('Couldn’t start the interview', errorMessage(error))
+      // PRO_REQUIRED opens the upgrade modal (apiClient); no extra error toast for that case.
+      if (!(error instanceof ApiError && error.code === 'PRO_REQUIRED')) toast.error('Couldn’t start the interview', errorMessage(error))
       setStarting(false)
     }
   }
@@ -153,11 +159,18 @@ function Setup({ onStarted, onOpen }: { onStarted: (session: InterviewSession) =
             </Select>
           </div>
           <TagInput label="Skills to focus on (optional)" hint="Press Enter after each one." placeholder="e.g. React" value={skills} onChange={setSkills} />
-          <div>
+          <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" size="lg" loading={starting}>
               Start interview
               <ArrowRight className="size-4" aria-hidden />
             </Button>
+            {freeLeft !== null && (
+              <p className="text-xs text-secondary">
+                {freeLeft > 0
+                  ? `Your Free plan includes ${freeLeft} mock interview${freeLeft === 1 ? '' : 's'}. Clave Pro makes them unlimited.`
+                  : 'You’ve used your free mock interview. Clave Pro makes them unlimited.'}
+              </p>
+            )}
           </div>
         </form>
       </Card>

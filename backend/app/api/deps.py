@@ -24,13 +24,13 @@ async def run_ai(awaitable: Awaitable[T]) -> T:
         raise ApiError(502, "AI_GENERATION_FAILED", str(exc) or "AI service returned an unexpected response, please retry.") from exc
 
 
-async def ai_action(uid: str, call: Callable[[], Awaitable[T]]) -> T:
+async def ai_action(uid: str, call: Callable[[], Awaitable[T]], kind: quota.AiKind = "ai") -> T:
     """One user-visible AI action: checks the daily allowance, runs the call, refunds it on failure."""
-    await quota.consume_ai_action(uid)
+    await quota.consume_ai_action(uid, kind)
     try:
         return await run_ai(call())
     except Exception:
-        await quota.refund_ai_action(uid)
+        await quota.refund_ai_action(uid, kind)
         raise
 
 

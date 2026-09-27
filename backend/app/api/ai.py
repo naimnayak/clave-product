@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import Field
 
-from app.api.deps import AI_LIMIT, ai_action, stored_profile
+from app.api.deps import AI_LIMIT, ai_action
 from app.core.errors import ApiError, not_found
 from app.core.limiter import limiter
 from app.core.security import CurrentUser, get_current_user
@@ -13,6 +13,7 @@ from app.core.utils import iso, new_id, ok, utcnow
 from app.db import mongo
 from app.schemas.common import CamelModel, ShortText, Tags, Text
 from app.services import ai_tasks, quota
+from app.services import chat as chat_service
 from app.services.accounts import get_user_doc, track_usage
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -72,16 +73,50 @@ async def transform(request: Request, payload: TransformRequest, user: CurrentUs
     return ok({"text": text})
 
 
+@router.get("/chat/session")
+async def current_chat(user: CurrentUser = Depends(get_current_user)):
+    """The open conversation (continues across days and devices until it closes), or null."""
+    return ok(chat_service.view(await chat_service.active_session(user.uid)))
+
+
 @router.post("/chat")
 @limiter.limit(AI_LIMIT)
 async def chat(request: Request, payload: ChatRequest, user: CurrentUser = Depends(get_current_user)):
-    """Career assistant. Uses the Career Profile only when Settings → Privacy → Personalize AI is on."""
+    """Career assistant turn. The server keeps the conversation; `history` from older clients is ignored.
+
+    The first message of a session snapshots the user's profile, resume, job descriptions, applications and
+    long-term memory (only when Settings → Privacy → Personalize AI is on).
+    """
     account = await get_user_doc(user)
-    personalize = ((account.get("settings") or {}).get("privacy") or {}).get("personalizeAi", True)
-    profile = await stored_profile(user.uid) if personalize else None
-    history = [turn.dump() for turn in payload.history[-12:]]
-    result = await ai_action(user.uid, lambda: ai_tasks.chat(payload.message, payload.context, history=history, profile=profile))
-    return ok({**result, "personalized": bool(profile)})
+    session = await chat_service.get_or_create(user.uid, account)
+    result = await ai_action(
+        user.uid,
+        lambda: ai_tasks.chat(payload.message, history=chat_service.history(session), user_context=session["context"], extra_context=payload.context),
+        kind="chat",
+    )
+    session = await chat_service.append_turn(session, payload.message.strip(), result)
+    return ok({**result, "personalized": bool(session.get("personalized")), "session": chat_service.view(session)})
+
+
+@router.post("/chat/session/end")
+async def end_chat(user: CurrentUser = Depends(get_current_user)):
+    """'New chat': closes the open conversation now. Its key points are kept in memory, the transcript is deleted."""
+    session = await mongo.chat_sessions().find_one({"uid": user.uid, "status": "active"})
+    if session:
+        await chat_service.close(session)
+    return ok(None, "Conversation closed")
+
+
+@router.get("/memory")
+async def get_memory(user: CurrentUser = Depends(get_current_user)):
+    """What the assistant remembers from past conversations."""
+    return ok(await chat_service.memory_view(user.uid))
+
+
+@router.delete("/memory", status_code=204)
+async def clear_memory(user: CurrentUser = Depends(get_current_user)):
+    await mongo.user_memory().delete_one({"_id": user.uid})
+    return Response(status_code=204)
 
 
 def _session_view(session: dict, *, include_answers: bool = True) -> dict:
@@ -115,7 +150,12 @@ async def list_interviews(user: CurrentUser = Depends(get_current_user), limit: 
 @router.post("/interview/sessions", status_code=201)
 @limiter.limit(AI_LIMIT)
 async def start_interview(request: Request, payload: InterviewSessionRequest, user: CurrentUser = Depends(get_current_user)):
-    question = await ai_action(user.uid, lambda: ai_tasks.interview_question(payload.role, payload.level, payload.focus_skills, []))
+    await quota.consume_mock_interview(user.uid)  # Free: FREE_MOCK_INTERVIEWS sessions; Pro: unlimited
+    try:
+        question = await ai_action(user.uid, lambda: ai_tasks.interview_question(payload.role, payload.level, payload.focus_skills, []))
+    except Exception:
+        await quota.refund_mock_interview(user.uid)
+        raise
     now = utcnow()
     session = {
         "_id": new_id("int_"),

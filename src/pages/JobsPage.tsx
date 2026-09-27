@@ -1,4 +1,4 @@
-import { ArrowUpDown, Bookmark, Briefcase, SearchX } from 'lucide-react'
+import { ArrowUpDown, Bookmark, Briefcase, Radar, SearchX } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { JobFilters } from '@/components/jobs/JobFilters'
 import { JobSearch } from '@/components/jobs/JobSearch'
@@ -14,7 +14,9 @@ import { Select } from '@/components/ui/Select'
 import { useAsyncData } from '@/hooks/useAsyncData'
 import { useApplications } from '@/hooks/useApplications'
 import { useSavedJobs } from '@/hooks/useSavedJobs'
-import { getJobDetails, getJobs } from '@/services/job.service'
+import { JobsPreview } from '@/components/jobs/JobsPreview'
+import { ProGate } from '@/components/upgrade/ProGate'
+import { getJobDetails, getJobFeedStatus, getJobs } from '@/services/job.service'
 import { getProfile } from '@/services/profile.service'
 import type { Job } from '@/types/job'
 import { deriveMatchReasons } from '@/utils/jobMatchReasons'
@@ -24,7 +26,34 @@ type Sort = 'match' | 'newest'
 
 const loadContext = () => Promise.all([getJobDetails(), getProfile()]).then(([details, profile]) => ({ details, profile }))
 
+/** Jobs is a Clave Pro feature; Free users see their masked top matches and an upgrade prompt. */
 export function JobsPage() {
+  return (
+    <ProGate fallback={<JobsPreview />}>
+      <ProJobsPage />
+    </ProGate>
+  )
+}
+
+function FeedBanner() {
+  const feed = useAsyncData(getJobFeedStatus)
+  if (feed.status !== 'success' || !feed.data.enabled) return null
+  const { running, lastRefreshAt, nextRefreshAt, queries, location } = feed.data
+  const when = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-secondary">
+      <Radar className="size-3.5 text-primary" aria-hidden />
+      {running
+        ? 'Searching job boards for you now…'
+        : queries.length
+          ? `Your feed searches for ${queries.slice(0, 3).join(', ')} in ${location}.`
+          : 'Add a resume or a job description so your feed knows what to search for.'}
+      {lastRefreshAt && !running && <span className="text-muted">Updated {when(lastRefreshAt)}{nextRefreshAt ? ` · next ${when(nextRefreshAt)}` : ''}</span>}
+    </p>
+  )
+}
+
+function ProJobsPage() {
   const jobs = useAsyncData(getJobs)
   const context = useAsyncData(loadContext)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -40,7 +69,7 @@ export function JobsPage() {
   const tracking = view === 'applied' || view === 'interviewing' || view === 'rejected'
   const source =
     view === 'all'
-      ? all.filter((job) => job.recommended)
+      ? all
       : view === 'saved'
         ? all.filter((job) => job.id in saved)
         : view === 'matched'
@@ -62,7 +91,7 @@ export function JobsPage() {
 
   const locations = [...new Set(all.map((job) => job.city))].sort()
   const roles = roleOptionsFor(all)
-  const heading = { all: 'Recommended for You', saved: 'Saved Jobs', matched: 'Top Matches', applied: 'Applied', interviewing: 'Interviewing', rejected: 'Rejected' }[view]
+  const heading = { all: 'Jobs for You', saved: 'Saved Jobs', matched: 'Top Matches', applied: 'Applied', interviewing: 'Interviewing', rejected: 'Rejected' }[view]
 
   const listHeader = (
     <div className="mb-2.5 flex items-center justify-between gap-3">
@@ -85,6 +114,7 @@ export function JobsPage() {
       <JobsViewTabs className="-mb-1 overflow-x-auto md:hidden" />
 
       <h1 className="sr-only">Jobs</h1>
+      <FeedBanner />
 
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
         <JobSearch value={query} onChange={setQuery} className="col-span-2 lg:col-span-5" />
@@ -97,9 +127,21 @@ export function JobsPage() {
 
         {jobs.status === 'success' && visible.length === 0 && (
           <EmptyState
-            icon={tracking ? Briefcase : isFiltering ? SearchX : Bookmark}
-            title={tracking ? `No ${view} jobs yet` : isFiltering ? 'No jobs match' : 'No saved jobs yet'}
-            description={tracking ? 'Use “Apply on Company Site” or “Mark as Applied” on any job, then update its stage here.' : isFiltering ? 'Try a different search or loosen your filters.' : 'Tap the bookmark on any job to save it here.'}
+            icon={tracking ? Briefcase : isFiltering ? SearchX : view === 'all' ? Radar : Bookmark}
+            title={
+              tracking ? `No ${view} jobs yet` : isFiltering ? 'No jobs match' : view === 'all' ? 'Your feed is being prepared' : view === 'matched' ? 'No top matches yet' : 'No saved jobs yet'
+            }
+            description={
+              tracking
+                ? 'Use “Apply on Company Site” or “Mark as Applied” on any job, then update its stage here.'
+                : isFiltering
+                  ? 'Try a different search or loosen your filters.'
+                  : view === 'all'
+                    ? 'We’re searching job boards for roles that fit your resume. Check back in a few minutes.'
+                    : view === 'matched'
+                      ? 'Jobs that match 90% or more appear here. Running an ATS check with a job description sharpens your matches.'
+                      : 'Tap the bookmark on any job to save it here.'
+            }
             action={
               isFiltering &&
               !tracking && (

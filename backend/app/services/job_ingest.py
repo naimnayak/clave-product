@@ -22,8 +22,9 @@ from app.db import mongo
 from app.services import resume_logic as rl
 from app.services.ai_client import AIResponseError, AIUnavailableError, generate_structured, is_configured
 from app.services.apify_jobs import search_jobs_parallel
-from app.services.job_matching import match_percent
+from app.services.job_matching import load_signals, match_percent
 from app.services.notifications import notify
+from app.services.plans import PRO_PLAN
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,16 @@ def _plain(text: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(_TAG.sub(" ", text))).strip()
 
 
+_RELATIVE = re.compile(r"(\d+)\+?\s*(hour|day|week|month)", re.IGNORECASE)
+_UNIT_DAYS = {"hour": 0, "day": 1, "week": 7, "month": 30}
+
+
 def _posted_at(value: str):
+    value = (value or "").strip()
+    if relative := _RELATIVE.search(value):  # "3 days ago", "30+ days ago", "5 hours ago"
+        return utcnow() - timedelta(days=int(relative.group(1)) * _UNIT_DAYS[relative.group(2).lower()])
+    if value.lower() in {"today", "just now", "few hours ago"}:
+        return utcnow()
     for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             parsed = datetime.strptime(value[:26], fmt).replace(tzinfo=UTC)
@@ -140,6 +150,7 @@ async def _structure(listings: list[dict[str, Any]]) -> list[_Listing]:
     compact = [
         {"index": i, "source": raw.get("source"), "title": raw.get("title"), "company": raw.get("company"),
          "location": raw.get("location"), "experience": raw.get("experience", ""), "salary": raw.get("salary", ""),
+         "listedSkills": raw.get("skills", ""),
          "description": _plain(raw.get("description") or "")[:6000]}
         for i, raw in enumerate(listings)
     ]
@@ -184,17 +195,27 @@ def _to_doc(raw: dict[str, Any], item: _Listing, external_id: str) -> dict[str, 
     }
 
 
-async def _notify_matches(new_jobs: list[dict[str, Any]]) -> int:
+def pro_user_filter() -> dict[str, Any]:
+    return {"subscription.plan": PRO_PLAN, "subscription.currentPeriodEnd": {"$gt": utcnow()}}
+
+
+async def notify_matches(new_jobs: list[dict[str, Any]], uids: list[str] | None = None) -> int:
+    """Tells Pro users (or just `uids`) about new jobs that fit their resume and job descriptions."""
+    if not new_jobs:
+        return 0
     threshold = get_settings().job_match_notify_threshold
+    if uids is None:
+        uids = [doc["_id"] async for doc in mongo.users().find(pro_user_filter(), {"_id": 1})]
     notified = 0
-    async for profile in mongo.profiles().find({}, {"data": 1}):
-        matches = [job for job in new_jobs if match_percent(job, profile.get("data")) >= threshold]
+    for uid in uids:
+        signals = await load_signals(uid)
+        matches = [job for job in new_jobs if match_percent(job, signals) >= threshold]
         if matches:
             count = len(matches)
             await notify(
-                profile["_id"],
+                uid,
                 "jobs",
-                f"{count} new job{'s' if count != 1 else ''} match your profile",
+                f"{count} new job{'s' if count != 1 else ''} match your resume",
                 ", ".join(f"{j['title']} at {j['company']}" for j in matches[:3]),
                 "/jobs?view=matched",
             )
@@ -202,8 +223,53 @@ async def _notify_matches(new_jobs: list[dict[str, Any]]) -> int:
     return notified
 
 
+async def store_listings(listings: list[dict[str, Any]], summary: dict[str, Any], label: str) -> list[dict[str, Any]]:
+    """Refreshes listings already in the catalog and structures + inserts new ones. Returns the new docs."""
+    fresh: list[tuple[dict[str, Any], str]] = []
+    for raw in listings:
+        ext = _external_id(raw.get("url", ""), raw.get("source", ""), raw.get("title", ""), raw.get("company", ""))
+        seen = await mongo.jobs().update_one({"externalId": ext}, {"$set": {"lastSeenAt": utcnow(), "active": True}})
+        if seen.matched_count:
+            summary["refreshed"] += 1
+        else:
+            fresh.append((raw, ext))
+
+    new_docs: list[dict[str, Any]] = []
+    for start in range(0, len(fresh), _BATCH):
+        batch = fresh[start : start + _BATCH]
+        try:
+            items = await _structure([raw for raw, _ in batch])
+        except (AIUnavailableError, AIResponseError) as exc:
+            summary["errors"].append(f"{label}: AI structuring failed ({exc})")
+            continue
+        for item in items:
+            if not (0 <= item.index < len(batch)) or not item.isJobPosting or not item.title.strip():
+                summary["skipped"] += 1
+                continue
+            raw, ext = batch[item.index]
+            doc = _to_doc(raw, item, ext)
+            try:
+                await mongo.jobs().insert_one(doc)
+            except DuplicateKeyError:
+                summary["refreshed"] += 1
+                continue
+            new_docs.append(doc)
+            summary["created"] += 1
+    return new_docs
+
+
+async def retire_demo_jobs(summary: dict[str, Any]) -> None:
+    """Seeded demo jobs switch off as soon as any real listing is in the catalog."""
+    if await mongo.jobs().count_documents({"active": True, "source": {"$ne": "seed"}}, limit=1):
+        demo = await mongo.jobs().update_many({"source": "seed", "active": True}, {"$set": {"active": False}})
+        summary["demoJobsRetired"] = demo.modified_count
+
+
 async def ingest() -> dict[str, Any]:
-    """One ingestion pass. Returns a summary that is also stored in `ingest_runs`."""
+    """One shared-catalog ingestion pass (CLI / JOB_INGEST_INTERVAL_HOURS). Summary is stored in `ingest_runs`.
+
+    Pro users' personal searches run through services/job_feed.py instead; this pass is optional.
+    """
     settings = get_settings()
     summary: dict[str, Any] = {"startedAt": utcnow(), "queries": [], "fetched": 0, "created": 0, "refreshed": 0, "skipped": 0, "errors": []}
     if not settings.apify_api_token:
@@ -229,47 +295,20 @@ async def ingest() -> dict[str, Any]:
             summary["errors"] += [f"{query}/{e['source']}: {e['error'][:200]}" for e in result.get("source_errors", [])]
             listings = result.get("jobs", [])
             summary["fetched"] += len(listings)
+            new_docs += await store_listings(listings, summary, query)
 
-            fresh: list[tuple[dict[str, Any], str]] = []
-            for raw in listings:
-                ext = _external_id(raw.get("url", ""), raw.get("source", ""), raw.get("title", ""), raw.get("company", ""))
-                seen = await mongo.jobs().update_one({"externalId": ext}, {"$set": {"lastSeenAt": utcnow(), "active": True}})
-                if seen.matched_count:
-                    summary["refreshed"] += 1
-                else:
-                    fresh.append((raw, ext))
-
-            for start in range(0, len(fresh), _BATCH):
-                batch = fresh[start : start + _BATCH]
-                try:
-                    items = await _structure([raw for raw, _ in batch])
-                except (AIUnavailableError, AIResponseError) as exc:
-                    summary["errors"].append(f"{query}: AI structuring failed ({exc})")
-                    continue
-                for item in items:
-                    if not (0 <= item.index < len(batch)) or not item.isJobPosting or not item.title.strip():
-                        summary["skipped"] += 1
-                        continue
-                    raw, ext = batch[item.index]
-                    doc = _to_doc(raw, item, ext)
-                    try:
-                        await mongo.jobs().insert_one(doc)
-                    except DuplicateKeyError:
-                        summary["refreshed"] += 1
-                        continue
-                    new_docs.append(doc)
-                    summary["created"] += 1
-
-        cutoff = utcnow() - timedelta(days=settings.job_max_age_days)
-        expired = await mongo.jobs().update_many({"source": {"$regex": "^apify:"}, "lastSeenAt": {"$lt": cutoff}, "active": True}, {"$set": {"active": False}})
-        summary["expired"] = expired.modified_count
-        if await mongo.jobs().count_documents({"active": True, "source": {"$ne": "seed"}}):
-            demo = await mongo.jobs().update_many({"source": "seed", "active": True}, {"$set": {"active": False}})
-            summary["demoJobsRetired"] = demo.modified_count
-        summary["usersNotified"] = await _notify_matches(new_docs) if new_docs else 0
+        await expire_old_jobs(summary)
+        await retire_demo_jobs(summary)
+        summary["usersNotified"] = await notify_matches(new_docs)
     finally:
         await _release_lease()
         summary["finishedAt"] = utcnow()
         await mongo.ingest_runs().insert_one({k: v for k, v in summary.items()})
         logger.info("Job ingestion: %s", {k: v for k, v in summary.items() if k not in {"startedAt", "finishedAt"}})
     return summary
+
+
+async def expire_old_jobs(summary: dict[str, Any]) -> None:
+    cutoff = utcnow() - timedelta(days=get_settings().job_max_age_days)
+    expired = await mongo.jobs().update_many({"source": {"$regex": "^apify:"}, "lastSeenAt": {"$lt": cutoff}, "active": True}, {"$set": {"active": False}})
+    summary["expired"] = summary.get("expired", 0) + expired.modified_count

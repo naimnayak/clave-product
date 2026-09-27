@@ -1,11 +1,13 @@
-"""Live job search across Indeed / Naukri / LinkedIn through Apify actors (ported from the ATS backend).
+"""Live job search across Indeed, Naukri, LinkedIn, Internshala and Foundit through Apify actors.
 
-Results are raw listings (title, company, location, url, description), not the enriched Job shape the
-Jobs page renders; see the integration report for the ingestion step that is still missing.
+Results are raw listings (title, company, location, url, description); services/job_ingest.py turns
+them into structured catalog jobs. Every actor call is counted in `job_feed_usage` (`apify:YYYY-MM`)
+and searches stop once APIFY_MONTHLY_RESULT_LIMIT listings have been fetched in the month.
 """
 
-import os
 import asyncio
+import logging
+import math
 import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
@@ -13,18 +15,58 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from app.core.config import get_settings
+from app.core.utils import utcnow
+from app.db import mongo
 
+logger = logging.getLogger(__name__)
 
 APIFY_BASE_URL = "https://api.apify.com/v2"
 DEFAULT_TIMEOUT = 75
+SUPPORTED_SOURCES = ("indeed", "naukri", "linkedin", "internshala", "foundit")
 
-# Override actor IDs from .env if needed. Defaults checked on 2026-09-26: the ATS backend's
-# Indeed (pro100chok) and Naukri (epctex) actors no longer exist on Apify.
-ACTOR_INDEED = os.getenv("APIFY_ACTOR_INDEED", "misceres/indeed-scraper")
-ACTOR_NAUKRI = os.getenv("APIFY_ACTOR_NAUKRI", "memo23/naukri-scraper")
-ACTOR_LINKEDIN = os.getenv("APIFY_ACTOR_LINKEDIN", "fetchclub/linkedin-jobs-scraper")
-ACTOR_GOOGLE_SEARCH = os.getenv("APIFY_ACTOR_GOOGLE_SEARCH", "apify/google-search-scraper")
-ACTOR_NAUKRI_STRICT = os.getenv("APIFY_ACTOR_NAUKRI_STRICT", "memo23/naukri-scraper")
+
+class ApifyBudgetExceeded(RuntimeError):
+    """The month's listing budget is used up; searches resume next month."""
+
+
+def _actor_map() -> Dict[str, str]:
+    """Actor IDs from settings (APIFY_ACTOR_* in backend/.env)."""
+    s = get_settings()
+    return {
+        "indeed": s.apify_actor_indeed,
+        "naukri": s.apify_actor_naukri,
+        "linkedin": s.apify_actor_linkedin,
+        "internshala": s.apify_actor_internshala,
+        "foundit": s.apify_actor_foundit,
+    }
+
+
+def _usage_key() -> str:
+    return f"apify:{utcnow().strftime('%Y-%m')}"
+
+
+async def monthly_results_used() -> int:
+    doc = await mongo.job_feed_usage().find_one({"_id": _usage_key()})
+    return int((doc or {}).get("results", 0))
+
+
+async def _record_results(count: int) -> None:
+    if count <= 0:
+        return
+    doc = await mongo.job_feed_usage().find_one_and_update(
+        {"_id": _usage_key()}, {"$inc": {"results": count, "runs": 1}}, upsert=True, return_document=True
+    )
+    settings = get_settings()
+    used = int((doc or {}).get("results", count))
+    cap = settings.apify_monthly_result_limit
+    if cap and used >= cap * 0.8 and used - count < cap * 0.8:
+        logger.warning("Apify usage at %d of %d listings this month (~$%.2f).", used, cap, used * settings.apify_cost_per_1000_usd / 1000)
+
+
+async def _check_budget() -> None:
+    cap = get_settings().apify_monthly_result_limit
+    if cap and await monthly_results_used() >= cap:
+        raise ApifyBudgetExceeded("Monthly Apify listing budget reached")
 
 STOPWORDS = {
     "and", "the", "for", "with", "your", "you", "our", "are", "this", "that", "from", "into",
@@ -141,12 +183,6 @@ def _clean_jobs_for_output(jobs: List[Dict[str, str]], query: str) -> List[Dict[
     return cleaned
 
 
-def _is_enabled(flag: Optional[str], default: bool = False) -> bool:
-    if flag is None:
-        return default
-    return flag.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _resolve_apify_token() -> str:
     """Accept raw token or full Apify API URL containing token query param."""
     raw = (get_settings().apify_api_token or "").strip()
@@ -239,6 +275,30 @@ def _build_source_inputs(query: str, location: str, limit: int) -> Dict[str, Lis
                 "limit": limit,
             },
         ],
+        "internshala": [
+            # crawloop/internshala-scraper: internships plus jobs, the campus / fresher board
+            {
+                "position": query,
+                "location": "" if location.lower() == "india" else location,
+                "listingType": "internships_and_jobs",
+                "maxItems": limit,
+                "maxPages": 1,
+            },
+        ],
+        "foundit": [
+            # crawloop/foundit-jobs-scraper (same input grammar as the crawloop Internshala actor)
+            {
+                "position": query,
+                "location": location,
+                "maxItems": limit,
+                "maxPages": 1,
+            },
+            {
+                "keyword": query,
+                "location": location,
+                "maxItems": limit,
+            },
+        ],
     }
 
 
@@ -325,13 +385,14 @@ def _normalize_job(item: Dict[str, Any], source: str) -> Dict[str, str]:
     return {
         "source": source,
         "title": _pick_first_flexible(item, ["title", "positionName", "jobTitle", "position", "job_title"]),
-        "company": _pick_first_flexible(item, ["company", "companyName", "companyDetail", "employer", "company_name", "companyInfo"]),
+        "company": _pick_first_flexible(item, ["company", "companyName", "companyDetail", "employer", "employerName", "company_name", "companyInfo"]),
         "location": _pick_first_flexible(item, ["location", "jobLocation", "locations", "city", "place"]),
         "url": _pick_first_flexible(item, ["url", "jobUrl", "link", "applyUrl", "job_link", "jobLink", "staticUrl"]),
         "description": _pick_first_flexible(item, ["description", "descriptionHTML", "snippet", "shortDescription", "summary", "jobDescription", "details"]),
         "experience": _pick_first_flexible(item, ["experienceText", "experience", "jobExperience"]),
-        "salary": salary_text or _pick_first_flexible(item, ["salary", "salaryText"]),
-        "posted": _pick_first_flexible(item, ["postingDateParsed", "createdDate", "postedAt", "datePosted"]),
+        "salary": salary_text or _pick_first_flexible(item, ["salary", "salaryText", "compensationText"]),
+        "posted": _pick_first_flexible(item, ["postingDateParsed", "createdDate", "postedAt", "datePosted", "postedText"]),
+        "skills": _pick_first_flexible(item, ["skills", "keySkills", "tagsAndSkills"]),
     }
 
 
@@ -359,11 +420,10 @@ async def _run_actor(
                 continue
 
             data = response.json()
-            if isinstance(data, list):
-                return data
-            if isinstance(data, dict) and isinstance(data.get("items"), list):
-                return data["items"]
-            return []
+            rows = data if isinstance(data, list) else data.get("items") if isinstance(data, dict) else None
+            rows = rows if isinstance(rows, list) else []
+            await _record_results(len(rows))  # pay-per-result actors bill every returned row
+            return rows
         except Exception as e:
             last_error = f"{source} request failed: {str(e)}"
 
@@ -435,6 +495,7 @@ async def search_jobs_parallel(
     if not token:
         raise RuntimeError("APIFY_API_TOKEN is missing")
 
+    await _check_budget()
     limit = max(1, min(limit, 30))
     requested_sources = [s.lower() for s in (sources or ["indeed", "naukri"])]
 
@@ -447,19 +508,18 @@ async def search_jobs_parallel(
         if source == "linkedin" and not linkedin_enabled:
             skipped_sources.append({
                 "source": "linkedin",
-                "reason": "LinkedIn search is disabled until OAuth is configured",
+                "reason": "LinkedIn scraping is off (APIFY_LINKEDIN_ENABLED=false)",
             })
             continue
-        if source in {"indeed", "naukri", "linkedin"}:
+        if source in SUPPORTED_SOURCES and source not in active_sources:
             active_sources.append(source)
 
-    actor_map = {
-        "indeed": ACTOR_INDEED,
-        "naukri": ACTOR_NAUKRI,
-        "linkedin": ACTOR_LINKEDIN,
-    }
-
-    input_map = _build_source_inputs(query=query, location=location, limit=limit)
+    actor_map = _actor_map()
+    fallback_actor = get_settings().apify_actor_google_search
+    # Each board only fetches its share of `limit` (+1 spare for filtering), so billed results stay
+    # close to what is kept instead of limit x number of boards.
+    per_source = min(limit, math.ceil(limit / max(1, len(active_sources))) + 1)
+    input_map = _build_source_inputs(query=query, location=location, limit=per_source)
 
     jobs: List[Dict[str, str]] = []
     source_errors: List[Dict[str, str]] = []
@@ -492,7 +552,7 @@ async def search_jobs_parallel(
                             legacy_rows = await _run_actor(
                                 client=client,
                                 token=token,
-                                actor_id=ACTOR_NAUKRI_STRICT,
+                                actor_id=actor_map["naukri"],
                                 source="naukri-strict",
                                 payload_candidates=input_map["naukri"],
                             )
@@ -519,13 +579,13 @@ async def search_jobs_parallel(
                         fallback_items = await _run_actor(
                             client=client,
                             token=token,
-                            actor_id=ACTOR_GOOGLE_SEARCH,
+                            actor_id=fallback_actor,
                             source=f"{source}-fallback",
                             payload_candidates=_build_google_fallback_inputs(
                                 query=query,
                                 location=location,
                                 source=source,
-                                limit=limit,
+                                limit=per_source,
                             ),
                         )
                     except Exception as fallback_error:
@@ -556,13 +616,13 @@ async def search_jobs_parallel(
                         fallback_items = await _run_actor(
                             client=client,
                             token=token,
-                            actor_id=ACTOR_GOOGLE_SEARCH,
+                            actor_id=fallback_actor,
                             source=f"{source}-fallback",
                             payload_candidates=_build_google_fallback_inputs(
                                 query=query,
                                 location=location,
                                 source=source,
-                                limit=limit,
+                                limit=per_source,
                             ),
                         )
                         extracted = _extract_from_google_search_items(fallback_items, source)

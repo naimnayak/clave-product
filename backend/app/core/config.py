@@ -35,29 +35,55 @@ class Settings(BaseSettings):
     # Reasoning effort for models that support it ("minimal", "low", "medium", "high"); "" disables it.
     ai_thinking_level: str = "low"
     ai_timeout_seconds: float = 90
-    # Daily AI actions per user (generation, tailoring, parsing, rewrites, chat, interviews).
-    ai_daily_limit_free: int = 30
+    # Plan defaults. They seed the `plans` collection on first start; after that the documents in
+    # MongoDB are the source of truth (edit them to change prices or limits without a deploy).
+    # Daily AI actions per user (generation, tailoring, parsing, rewrites, interviews). Chat has its own cap.
+    ai_daily_limit_free: int = 15
     ai_daily_limit_paid: int = 300
+    chat_daily_limit_free: int = 10
+    chat_daily_limit_paid: int = 100
+    free_mock_interviews: int = 1
 
     # Plans and quotas (see developer-handoff/07-SUBSCRIPTION-USAGE.md)
     enforce_plan_limits: bool = True
-    free_resume_limit: int = 1
+    free_resume_limit: int = 5
     single_resume_price_inr: int = 49
     monthly_price_inr: int = 199
     monthly_plan_days: int = 30
 
-    # Free-resume abuse guard ported from the ATS backend. Off by default because
-    # students often share campus or NAT IP addresses.
-    free_resume_guard_enabled: bool = False
+    # Free-resume device guard: free resumes are also capped per device (browser id sent by the
+    # frontend) and per device + IP pair, so new accounts on the same laptop don't reset the
+    # allowance while other devices on the same network are unaffected. Only salted hashes are stored.
+    free_resume_guard_enabled: bool = True
+    free_resumes_per_device: int = 5
     free_resume_guard_hash_salt: str = ""
 
     # Payments (Razorpay)
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
 
     # Live job search through Apify actors (raw token or an Apify URL containing ?token=)
     apify_api_token: str = ""
     apify_linkedin_enabled: bool = False
+    # Actor IDs per job board (username/actor-name). Override when an actor is retired from the store.
+    apify_actor_indeed: str = "misceres/indeed-scraper"
+    apify_actor_naukri: str = "memo23/naukri-scraper"
+    apify_actor_linkedin: str = "fetchclub/linkedin-jobs-scraper"
+    apify_actor_internshala: str = "crawloop/internshala-scraper"
+    apify_actor_foundit: str = "crawloop/foundit-jobs-scraper"
+    apify_actor_google_search: str = "apify/google-search-scraper"
+
+    # Personal job feed (Pro). Searches come from each user's resume and saved job descriptions.
+    job_feed_sources: str = "indeed,naukri,linkedin,internshala,foundit"
+    job_feed_results_per_search: int = 10
+    job_feed_refresh_days: float = 3.5  # automatic refresh about twice a week
+    job_feed_scheduled_per_month: int = 8
+    job_feed_jd_searches_per_month: int = 5
+    job_feed_cache_hours: int = 24
+    # Hard stop for Apify spend across all users: listings fetched per calendar month (0 = no cap).
+    apify_monthly_result_limit: int = 3000
+    apify_cost_per_1000_usd: float = 5.0  # only used for the spend estimate in logs
 
     # Load the demo job catalog (converted from the frontend mocks) when the jobs collection is empty.
     # Demo jobs are switched off automatically once the job feed has imported real listings.
@@ -91,6 +117,11 @@ class Settings(BaseSettings):
     web_base_url: str = "http://localhost:5173"
 
     notification_retention_days: int = 90
+
+    # Career assistant: a chat session stays open this long, then its key points are saved to the
+    # user's long-term memory and the transcript is deleted.
+    chat_session_hours: int = 48
+    chat_history_turns: int = 20
 
     # Per-user burst limit for AI endpoints (slowapi syntax), and where limiter counters live.
     # Use redis://host:6379 when running more than one server process (needs the `redis` package).

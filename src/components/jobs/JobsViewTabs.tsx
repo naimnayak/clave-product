@@ -1,3 +1,4 @@
+import { ProGate } from '@/components/upgrade/ProGate'
 import { useApplications } from '@/hooks/useApplications'
 import { useAsyncData } from '@/hooks/useAsyncData'
 import { MATCHED_THRESHOLD, useJobsView } from '@/hooks/useJobsView'
@@ -17,8 +18,16 @@ const track: Array<[JobsView, string]> = [
   ['rejected', 'Rejected'],
 ]
 
-/** Tab groups shared by the navbar (md+) and the page header (mobile). */
+/** Tab groups shared by the navbar (md+) and the page header (mobile). Pro only, like the Jobs page. */
 export function JobsViewTabs({ className }: { className?: string }) {
+  return (
+    <ProGate fallback={null} loading={null}>
+      <Tabs className={className} />
+    </ProGate>
+  )
+}
+
+function Tabs({ className }: { className?: string }) {
   const [view, setView] = useJobsView()
   const jobs = useAsyncData(getJobs)
   const { saved } = useSavedJobs()

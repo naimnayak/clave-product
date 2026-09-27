@@ -1,58 +1,62 @@
 # 07 · Subscriptions & Usage
 
-Code: `app/services/quota.py`, `app/api/billing.py`, `app/services/resumes.py`. Frontend: `src/services/subscription.service.ts`, upgrade modal opened automatically on `PLAN_LIMIT_REACHED` (`apiClient.ts`).
+Server-side enforcement lives in `backend/app/services/quota.py`; the catalog in `services/plans.py`.
 
-## Plans
+## Plans (`plans` collection)
 
-| Plan | Price | What you get |
-|---|---|---|
-| Free | ₹0 | `FREE_RESUME_LIMIT` = 1 resume, lifetime |
-| Single Resume | `SINGLE_RESUME_PRICE_INR` = ₹49 | +1 resume credit per purchase (`subscription.singleResumesBalance`) |
-| Monthly Unlimited | `MONTHLY_PRICE_INR` = ₹199 | Unlimited resumes for `MONTHLY_PLAN_DAYS` = 30 days. One-time payment, no auto-renew. Buying again extends from the current end date. |
+| id | Name | Price | What it gives |
+|---|---|---|---|
+| `free` | Free | ₹0 | 5 resumes (lifetime, also capped per device), 15 AI actions/day, 10 assistant messages/day, 1 mock interview, a masked preview of the top 3 job matches |
+| `single` | Single Resume | ₹49 one-time | +1 resume credit (never expires) |
+| `monthly` | Clave Pro | ₹199 for 30 days, no auto-renewal | Unlimited resumes and mock interviews, 300 AI actions/day, 100 assistant messages/day, the personal job feed |
 
-Daily AI allowance: `AI_DAILY_LIMIT_FREE` = 30, `AI_DAILY_LIMIT_PAID` = 300 while Monthly is active (see 05). Single Resume credits do not raise the AI allowance.
+The documents are seeded from settings (`FREE_RESUME_LIMIT`, `AI_DAILY_LIMIT_*`, `CHAT_DAILY_LIMIT_*`, `FREE_MOCK_INTERVIEWS`, prices) the first time they are read. After that **MongoDB is the source of truth**: edit `db.plans` to change a price or limit (`null` = unlimited); changing the env vars does not touch existing documents. `GET /api/subscriptions/plans` returns the active plans.
 
-## What consumes a resume credit
+The plan id `monthly` is kept for compatibility with stored subscriptions and payments; it is displayed as "Clave Pro".
 
-| Action | Credit |
-|---|---|
-| `POST /resumes` (manual, template, AI draft) | Yes |
-| `POST /resumes` with `sourceType: "upload"` | No (once per uploaded file) |
-| `POST /resumes/{id}/duplicate` | Yes |
-| `POST /resumes/{id}/tailor` (creates a new resume) | Yes |
-| `POST /resumes/generate` | No, but it pre-checks the allowance (402) so AI isn't spent on something that can't be saved |
-| Uploading, parsing, editing, ATS analysis, tailor analysis | No |
+## What counts as a resume
+
+Every saved resume: manual, template, AI draft, duplicate, one-shot tailor and **uploads** (an uploaded file can be saved once). Unsaved AI drafts don't count; they use the daily AI allowance. Deleting a resume never gives the allowance back.
 
 ## Consumption order (`consume_resume_credit`)
 
-Atomic `find_one_and_update` steps, first match wins:
-1. `ENFORCE_PLAN_LIMITS=false` → just count (development only).
-2. Active Monthly plan → count.
-3. Free allowance left (`usage.resumesCreated < FREE_RESUME_LIMIT`) and the optional free-resume guard doesn't block → count.
-4. `singleResumesBalance > 0` → count and decrement the balance.
-5. Otherwise `402 PLAN_LIMIT_REACHED`, with `plans` (single, monthly) in the error object.
+1. `ENFORCE_PLAN_LIMITS=false`: count only.
+2. Active Clave Pro: count.
+3. Free allowance left **and** the device guard allows it: count and record a device claim.
+4. Single-resume credit: count and decrement.
+5. Otherwise 402 `PLAN_LIMIT_REACHED` (the frontend opens the upgrade modal).
 
-`usage.resumesCreated` is a lifetime counter, so deleting resumes doesn't restore the free allowance.
+`assert_can_create` runs the same checks (including the device guard) before AI generation and tailoring, so tokens aren't spent on something the user can't save.
+
+## Device guard (`services/free_resume_guard.py`)
+
+The frontend sends a random, persistent browser id in `X-Clave-Device`. Free resumes are capped at `FREE_RESUMES_PER_DEVICE` per device and per device + IP pair, never per IP alone, so other devices on the same network are unaffected. Only salted hashes are stored (`FREE_RESUME_GUARD_HASH_SALT`). The client IP comes from uvicorn's proxy headers; the edge nginx overwrites `X-Forwarded-For` so it can't be spoofed. Claims survive account deletion (detached from the uid) so re-creating an account doesn't reset a device.
+
+## Pro-only features
+
+- Jobs (`api/jobs.py`): every endpoint except `GET /jobs/preview` returns 402 `PRO_REQUIRED` for Free users. Apify cost controls are documented at the top of `services/job_feed.py`.
+- Mock interviews: Free users can start `FREE_MOCK_INTERVIEWS` sessions, then 402 `PRO_REQUIRED`.
+- Everything else (AI generation, tailoring, ATS analysis, rewrites, chat) is on every plan, limited by the daily allowances.
+
+## Daily allowances (`ai_usage` collection)
+
+One document per user per UTC day: `count` (AI actions) and `chat` (assistant messages) with separate caps. Failed AI calls are refunded. `GET /api/ai/usage` → `{limit, used, chatLimit, chatUsed, isPro}`.
 
 ## Entitlements (`GET /api/subscriptions/current`)
 
-```json
-{ "plan": "free|monthly", "status": "active|expired", "currentPeriodEnd": "…Z|null",
-  "resumesCreated": 1, "resumesAllowance": 1, "singleResumesBalance": 0,
-  "isUnlimited": false, "canCreateResume": false, "limitsEnforced": true }
-```
-`plan` reports `monthly` only while `currentPeriodEnd` is in the future; an elapsed Monthly plan reports `free` with `status: "expired"`.
+`plan` (`free` | `monthly`), `planName`, `isPro`, `status`, `currentPeriodEnd`, `resumesCreated`, `resumesAllowance`, `singleResumesBalance`, `isUnlimited`, `canCreateResume`, `limitsEnforced`, `limits`, `features`, `mockInterviewsUsed`.
 
 ## Payments (Razorpay, `api/billing.py`)
 
-1. `POST /api/payments/orders {plan}` creates a Razorpay order in INR (amount in paise) and stores it in `payments` with `status: "created"`. Returns `orderId`, `amount`, `currency`, `keyId`.
-2. The client opens Razorpay Checkout with those values. **Not implemented yet** in the frontend.
-3. `POST /api/payments/verify {razorpayOrderId, razorpayPaymentId, razorpaySignature}` verifies the HMAC signature, atomically marks the order paid, and grants the plan stored on the order (single: +1 credit; monthly: extend `currentPeriodEnd` by 30 days). Repeat verifications return entitlements without granting again.
+1. `POST /api/payments/orders {plan}` creates an order; the price comes from the plan document.
+2. The frontend opens Razorpay Checkout (`src/services/payment.service.ts`).
+3. `POST /api/payments/verify` checks the checkout signature and grants the plan.
+4. `POST /api/payments/webhook` (Razorpay dashboard → Webhooks, events `payment.captured` and `order.paid`, secret in `RAZORPAY_WEBHOOK_SECRET`) grants it for payments whose browser closed early. It checks the amount against the stored order.
 
-Without `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` the payment endpoints return `503 PAYMENTS_NOT_CONFIGURED`.
+Granting is idempotent: whichever of verify/webhook arrives first flips the order from `created` to `paid`. Pro extends from the later of now and the current end date. Upgrading to Pro starts the user's first job feed search.
 
-Not implemented yet: Razorpay webhook (payments captured but never verified by the client are not reconciled automatically), refunds API, invoices.
+Not implemented: refunds and invoices (Razorpay emails receipts).
 
 ## ENFORCE_PLAN_LIMITS
 
-Default `true`. Setting it to `false` disables resume quotas (`canCreateResume` always true, startup logs a warning). Use only in development; keep `true` in production. It does not disable the daily AI allowance.
+Keep `true` in production. `false` disables resume, mock-interview and Pro checks (development only); the server logs a warning at startup.

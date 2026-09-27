@@ -16,13 +16,19 @@ from app.schemas.common import CamelModel, LongText, ShortText, Tags
 from app.schemas.profile import ProfileData
 from app.schemas.resume import JobDescriptionInput, ResumeCreate, ResumeDocumentIn, ResumePatch, TemplateId
 from app.schemas.settings import UserSettings
-from app.services import ai_tasks, quota
+from app.services import ai_tasks, job_descriptions, quota
 from app.services import resume_logic as rl
 from app.services import resumes as resume_store
 from app.services.accounts import get_user_doc, track_usage
 from app.services.ats import compute_ats
 
 router = APIRouter(tags=["Resumes"])
+
+
+async def _remember_jd(uid: str, text: str, source: job_descriptions.Source, keywords: list[str], title: str = "", company: str = "") -> None:
+    """Saves the job description for job matching; a new one also starts a Pro job search."""
+    doc = await job_descriptions.save(uid, text, source=source, keywords=keywords, title=title, company=company)
+    await job_descriptions.after_save(uid, doc)
 
 
 class AnalyzeJobRequest(CamelModel):
@@ -63,7 +69,7 @@ async def list_resumes(user: CurrentUser = Depends(get_current_user)):
 
 
 async def _claim_upload(uid: str, file_id: str | None) -> str:
-    """An uploaded resume is the user's own document, so saving it is free, but only once per uploaded file."""
+    """Each uploaded file can be saved as a resume once. It counts against the plan like any other resume."""
     if not file_id:
         raise ApiError(422, "VALIDATION_ERROR", "Uploaded resumes need the file they came from.", [{"field": "sourceFileId", "message": "Required"}])
     claimed = await mongo.files().find_one_and_update(
@@ -91,7 +97,6 @@ async def create_resume(request: Request, payload: ResumeCreate, user: CurrentUs
             tailored_for=payload.tailored_for,
             status=payload.status,
             request=request,
-            consume_credit=not is_upload,
         )
     except Exception:
         if file_id:
@@ -108,6 +113,7 @@ async def analyze_job(request: Request, payload: AnalyzeJobRequest, user: Curren
     profile = await stored_profile(user.uid) or (payload.career_profile.dump() if payload.career_profile else {})
     result = await ai_action(user.uid, lambda: ai_tasks.analyze_job(payload.target_role, payload.job_description, profile))
     await track_usage(user.uid, "aiGenerations")
+    await _remember_jd(user.uid, payload.job_description, "analyze", result["keyRequirements"], result["role"], result["company"])
     return ok(result)
 
 
@@ -115,7 +121,7 @@ async def analyze_job(request: Request, payload: AnalyzeJobRequest, user: Curren
 @limiter.limit(AI_LIMIT)
 async def generate_resume(request: Request, payload: GenerateRequest, user: CurrentUser = Depends(get_current_user)):
     """Returns an unsaved draft; the frontend saves it with POST /resumes when the user opens it."""
-    await quota.assert_can_create(user.uid)
+    await quota.assert_can_create(user.uid, request)
     user_doc = await get_user_doc(user)
     profile = await stored_profile(user.uid) or {}
     settings = UserSettings.model_validate(user_doc.get("settings") or {})
@@ -135,6 +141,9 @@ async def generate_resume(request: Request, payload: GenerateRequest, user: Curr
     )
     result["doc"] = {**result["doc"], **resume_store.normalize(result["doc"])}
     await track_usage(user.uid, "aiGenerations")
+    if payload.job_description.strip():
+        keywords = payload.job_analysis.key_requirements if payload.job_analysis else result.get("keywords") or []
+        await _remember_jd(user.uid, payload.job_description, "generate", keywords, payload.target_role)
     return ok(result)
 
 
@@ -209,6 +218,7 @@ async def tailor_analyze(request: Request, resume_id: str, payload: TailorReques
         lambda: ai_tasks.tailor_analysis(doc, job_title=payload.job_title, company=payload.company, job_description=payload.job_description),
     )
     await track_usage(user.uid, "aiGenerations")
+    await _remember_jd(user.uid, payload.job_description, "tailor", result["keywords"]["all"], result["jobTitle"], result["company"])
     return ok(result)
 
 
@@ -216,7 +226,7 @@ async def tailor_analyze(request: Request, resume_id: str, payload: TailorReques
 @limiter.limit(AI_LIMIT)
 async def tailor_resume(request: Request, resume_id: str, payload: TailorRequest, user: CurrentUser = Depends(get_current_user)):
     """One-shot tailoring: applies the safe suggestions and saves a NEW resume that references the original."""
-    await quota.assert_can_create(user.uid)
+    await quota.assert_can_create(user.uid, request)
     original = resume_store.document(await resume_store.get_owned(user.uid, resume_id))
     analysis = await ai_action(
         user.uid,
@@ -238,6 +248,7 @@ async def tailor_resume(request: Request, resume_id: str, payload: TailorRequest
         tailored_for=analysis["company"] or None,
         request=request,
     )
+    await _remember_jd(user.uid, payload.job_description, "tailor", analysis["keywords"]["all"], analysis["jobTitle"], analysis["company"])
     return ok({**resume_store.document(doc), "analysis": analysis}, "Resume tailored successfully")
 
 
@@ -251,4 +262,5 @@ async def ats_analyze(request: Request, resume_id: str, payload: JobDescriptionI
         {"$set": {"lastAtsAnalysis": {**result, "analyzedAt": utcnow()}}},
     )
     await track_usage(user.uid, "atsAnalyses")
+    await _remember_jd(user.uid, payload.job_description, "ats", result.pop("jobKeywords", []), result.pop("jobTitle", ""), result.pop("company", ""))
     return ok(result)

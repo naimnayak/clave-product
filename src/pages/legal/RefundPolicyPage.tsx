@@ -8,9 +8,9 @@ const sections: LegalSection[] = [
     title: 'What you pay for',
     body: (
       <ul>
-        <li><strong>Free:</strong> ₹0. One resume created in {info.product}.</li>
+        <li><strong>Free:</strong> ₹0. Five resumes per account (also limited per device), a daily AI allowance and one mock interview.</li>
         <li><strong>Single Resume:</strong> ₹{info.singlePrice}, a one-time payment for one additional resume.</li>
-        <li><strong>Monthly Unlimited:</strong> ₹{info.monthlyPrice}, a one-time payment for {info.monthlyDays} days of unlimited resumes and tailoring from the moment the payment is confirmed.</li>
+        <li><strong>Clave Pro:</strong> ₹{info.monthlyPrice}, a one-time payment for {info.monthlyDays} days of unlimited resumes and mock interviews, higher daily AI allowances and a personal job feed, from the moment the payment is confirmed.</li>
       </ul>
     ),
   },
@@ -34,7 +34,7 @@ const sections: LegalSection[] = [
     body: (
       <ul>
         <li><strong>Single Resume:</strong> full refund if you ask within 7 days of payment and haven’t created the resume you paid for.</li>
-        <li><strong>Monthly Unlimited:</strong> full refund if you ask within 7 days of payment and haven’t created or tailored any resume during the period.</li>
+        <li><strong>Clave Pro:</strong> full refund if you ask within 7 days of payment and haven’t created or tailored any resume during the period.</li>
         <li><strong>Failed, duplicate or incorrect charges:</strong> always refunded in full, whether or not you contact us.</li>
         <li><strong>Service problems:</strong> if a paid feature didn’t work because of a fault on our side and we couldn’t fix it within a reasonable time, we’ll refund you in full or in part.</li>
       </ul>
@@ -45,7 +45,7 @@ const sections: LegalSection[] = [
     title: 'When refunds don’t apply',
     body: (
       <ul>
-        <li>After the paid resume has been created, or after resumes were created or tailored on Monthly Unlimited, except for faults on our side.</li>
+        <li>After the paid resume has been created, or after resumes were created or tailored on Clave Pro, except for faults on our side.</li>
         <li>Dissatisfaction with job outcomes. {info.product} doesn’t guarantee interviews or offers (see the <LegalLink to={legalPaths.terms}>Terms</LegalLink>).</li>
         <li>Accounts closed for breaking the <LegalLink to={legalPaths.acceptableUse}>Acceptable Use Policy</LegalLink>.</li>
       </ul>

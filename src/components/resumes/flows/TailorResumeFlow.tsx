@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { resumePath } from '@/routes/navigation'
+import { useSubscription } from '@/hooks/useSubscription'
 import { getJobById, getRecommendedJobs, jobToDescription } from '@/services/job.service'
 import { listResumes } from '@/services/resume.service'
 import { createResumeFromDocument, getResumeDocument } from '@/services/resumeDocument.service'
@@ -91,7 +92,9 @@ export function TailorResumeFlow() {
 
   // Shortcut chips on the job step: the user's best-matching real listings.
   const [matches, setMatches] = useState<Job[]>([])
+  const { isPro } = useSubscription()
   useEffect(() => {
+    if (!isPro) return // job listings are a Clave Pro feature
     let active = true
     getRecommendedJobs(4)
       .then((list) => active && setMatches(list))
@@ -99,7 +102,7 @@ export function TailorResumeFlow() {
     return () => {
       active = false
     }
-  }, [])
+  }, [isPro])
 
   const pickMatch = async (job: Job) => {
     setTitle(job.title)

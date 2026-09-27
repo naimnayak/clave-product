@@ -2,6 +2,8 @@ import { SearchX } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BackToJobs } from '@/components/jobs/JobDetail'
+import { JobsPreview } from '@/components/jobs/JobsPreview'
+import { ProGate } from '@/components/upgrade/ProGate'
 import { JobDescription } from '@/components/jobs/JobDescription'
 import { JobDetails } from '@/components/jobs/JobDetails'
 import { JobHeader } from '@/components/jobs/JobHeader'
@@ -87,5 +89,9 @@ function JobDetailScreen({ jobId }: { jobId: string }) {
 
 export function JobDetailPage() {
   const { jobId = '' } = useParams()
-  return <JobDetailScreen key={jobId} jobId={jobId} />
+  return (
+    <ProGate fallback={<JobsPreview />}>
+      <JobDetailScreen key={jobId} jobId={jobId} />
+    </ProGate>
+  )
 }

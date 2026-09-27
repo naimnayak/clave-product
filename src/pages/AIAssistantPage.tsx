@@ -6,10 +6,11 @@ import { CapabilityCard } from '@/components/assistant/CapabilityCard'
 import { FormattedReply } from '@/components/assistant/FormattedReply'
 import { Button } from '@/components/ui/Button'
 import { linkStyles } from '@/components/ui/linkStyles'
+import { LoadingState } from '@/components/ui/LoadingState'
 import { paths } from '@/routes/navigation'
 import { ApiError } from '@/services/apiClient'
-import { getAiUsage, sendChat } from '@/services/assistant.service'
-import type { AiUsage, ChatTurn } from '@/services/assistant.service'
+import { endChatSession, getAiUsage, getChatSession, sendChat } from '@/services/assistant.service'
+import type { AiUsage, ChatSession, ChatTurn } from '@/services/assistant.service'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/utils/cn'
 
@@ -39,23 +40,21 @@ interface Message extends ChatTurn {
   suggestions?: string[]
 }
 
-const storageKey = (userId: string) => `clave.assistant.${userId}`
+const toMessages = (session: ChatSession | null): Message[] =>
+  (session?.messages ?? []).map(({ id, role, content, suggestions }) => ({ id, role, content, suggestions }))
 
-function loadConversation(userId: string): Message[] {
-  try {
-    return JSON.parse(sessionStorage.getItem(storageKey(userId)) ?? '[]') as Message[]
-  } catch {
-    return []
-  }
-}
-
-/** AI career assistant. The conversation is kept for this browser tab only. */
+/**
+ * AI career assistant. The conversation lives on the server: it carries on across days and devices for
+ * 48 hours, then its key points become the assistant's memory for the next conversation.
+ */
 export function AIAssistantPage() {
-  const userId = useAuthStore((state) => state.user?.id ?? '')
   const firstName = useAuthStore((state) => state.user?.name.split(' ')[0] ?? '')
-  const [messages, setMessages] = useState<Message[]>(() => loadConversation(userId))
+  const [messages, setMessages] = useState<Message[]>([])
+  const [loadingSession, setLoadingSession] = useState(true)
+  const [closesAt, setClosesAt] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [error, setError] = useState<{ message: string; retry?: string }>()
   const [usage, setUsage] = useState<AiUsage | null>(null)
   const [personalized, setPersonalized] = useState<boolean | null>(null)
@@ -63,17 +62,25 @@ export function AIAssistantPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    getAiUsage().then(setUsage, () => undefined)
+    let active = true
+    getAiUsage().then((value) => active && setUsage(value), () => undefined)
+    getChatSession()
+      .then((session) => {
+        if (!active) return
+        setMessages(toMessages(session))
+        setClosesAt(session?.closesAt ?? null)
+        if (session) setPersonalized(session.personalized)
+      })
+      .catch(() => undefined)
+      .finally(() => active && setLoadingSession(false))
+    return () => {
+      active = false
+    }
   }, [])
 
   useEffect(() => {
-    try {
-      sessionStorage.setItem(storageKey(userId), JSON.stringify(messages.slice(-40)))
-    } catch {
-      /* storage full or unavailable: the chat still works for this visit */
-    }
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, userId])
+  }, [messages])
 
   const ask = useCallback(
     async (text: string) => {
@@ -81,14 +88,14 @@ export function AIAssistantPage() {
       if (!message || sending) return
       setError(undefined)
       setDraft('')
-      const history: ChatTurn[] = messages.map(({ role, content }) => ({ role, content }))
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'user', content: message }])
       setSending(true)
       try {
-        const reply = await sendChat(message, history)
+        const reply = await sendChat(message)
         setPersonalized(reply.personalized)
-        setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', content: reply.reply, suggestions: reply.suggestedActions }])
-        setUsage((current) => (current ? { ...current, used: current.used + 1 } : current))
+        setMessages(toMessages(reply.session))
+        setClosesAt(reply.session.closesAt)
+        setUsage((current) => (current ? { ...current, chatUsed: current.chatUsed + 1 } : current))
       } catch (err) {
         setMessages((current) => current.slice(0, -1))
         setDraft(message)
@@ -101,7 +108,7 @@ export function AIAssistantPage() {
         inputRef.current?.focus()
       }
     },
-    [messages, sending],
+    [sending],
   )
 
   const onSubmit = (event: FormEvent) => {
@@ -116,13 +123,23 @@ export function AIAssistantPage() {
     }
   }
 
-  const reset = () => {
-    setMessages([])
-    setError(undefined)
-    inputRef.current?.focus()
+  const reset = async () => {
+    setResetting(true)
+    try {
+      await endChatSession()
+      setMessages([])
+      setClosesAt(null)
+      setError(undefined)
+    } catch {
+      setError({ message: 'Couldn’t start a new chat. Please try again.' })
+    } finally {
+      setResetting(false)
+      inputRef.current?.focus()
+    }
   }
 
-  const remaining = usage ? Math.max(0, usage.limit - usage.used) : null
+  const remaining = usage ? Math.max(0, usage.chatLimit - usage.chatUsed) : null
+  const continuesUntil = closesAt ? new Date(closesAt).toLocaleString('en-IN', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : null
   const last = messages[messages.length - 1]
 
   return (
@@ -137,13 +154,21 @@ export function AIAssistantPage() {
             Your career, <span className="text-primary">with more clarity.</span>
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-secondary">
-            Ask about resumes, job search, career direction or interviews. Answers use your{' '}
-            <Link to={paths.careerProfile} className={linkStyles}>Career Profile</Link> when{' '}
-            <Link to={`${paths.settings}#privacy`} className={linkStyles}>Personalize AI</Link> is on.
+            Ask about resumes, job search, career direction or interviews. When{' '}
+            <Link to={`${paths.settings}#privacy`} className={linkStyles}>Personalize AI</Link> is on, answers use your{' '}
+            <Link to={paths.careerProfile} className={linkStyles}>Career Profile</Link>, resumes, applications and what you’ve told the assistant before.
           </p>
         </div>
         {messages.length > 0 && (
-          <Button variant="secondary" size="sm" leadingIcon={<RotateCcw className="size-4" />} onClick={reset}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={resetting}
+            disabled={sending}
+            leadingIcon={<RotateCcw className="size-4" />}
+            onClick={() => void reset()}
+            title="Ends this conversation. The assistant keeps its key points in memory."
+          >
             New chat
           </Button>
         )}
@@ -152,7 +177,9 @@ export function AIAssistantPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <section aria-label="Conversation" className="flex min-h-[520px] flex-col rounded-large border border-border bg-surface shadow-card lg:h-[calc(100dvh-230px)]">
           <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-5 sm:px-6" aria-live="polite">
-            {messages.length === 0 ? (
+            {loadingSession ? (
+              <LoadingState label="Opening your conversation…" />
+            ) : messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center py-10 text-center">
                 <span className="flex size-12 items-center justify-center rounded-default icon-tile">
                   <Sparkles className="size-6" strokeWidth={1.75} aria-hidden />
@@ -243,8 +270,11 @@ export function AIAssistantPage() {
               </Button>
             </div>
             <p className="mt-2 flex flex-wrap justify-between gap-2 text-[11px] text-muted">
-              <span>AI can make mistakes. Check important details. Enter to send, Shift + Enter for a new line.</span>
-              {remaining !== null && <span>{remaining} AI action{remaining === 1 ? '' : 's'} left today</span>}
+              <span>
+                AI can make mistakes. Check important details.
+                {continuesUntil ? ` This chat continues until ${continuesUntil}, then the assistant remembers the key points.` : ''}
+              </span>
+              {remaining !== null && <span>{remaining} message{remaining === 1 ? '' : 's'} left today</span>}
             </p>
           </form>
         </section>

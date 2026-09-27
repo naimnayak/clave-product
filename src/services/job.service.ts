@@ -1,5 +1,5 @@
 import { apiClient, orNull } from '@/services/apiClient'
-import type { CompanyInfo, Job, JobDetail } from '@/types/job'
+import type { CompanyInfo, Job, JobDetail, JobFeedStatus, JobsPreview } from '@/types/job'
 
 /** Plain-text job description from a catalog listing, used to prefill the Tailor flow. */
 export function jobToDescription(job: Job, detail: JobDetail): string {
@@ -17,11 +17,21 @@ export function jobToDescription(job: Job, detail: JobDetail): string {
 }
 
 /**
- * Jobs catalog (GET /api/jobs). matchPercent and `recommended` are computed per user on the backend
- * from the Career Profile. The catalog is currently the seeded demo set; see backend/app/seed.
+ * Jobs catalog (GET /api/jobs, Clave Pro). matchPercent and `recommended` are computed per user on the
+ * backend from their latest resume, saved job descriptions and Career Profile. Free users get 402
+ * PRO_REQUIRED here and use getJobsPreview() instead.
  */
 export async function getJobs(): Promise<Job[]> {
   return apiClient.get<Job[]>('/jobs?limit=100')
+}
+
+/** Top matches for any plan; Free users get them with the company and apply link hidden. */
+export async function getJobsPreview(): Promise<JobsPreview> {
+  return apiClient.get<JobsPreview>('/jobs/preview')
+}
+
+export async function getJobFeedStatus(): Promise<JobFeedStatus> {
+  return apiClient.get<JobFeedStatus>('/jobs/feed')
 }
 
 export async function getRecommendedJobs(limit = 3): Promise<Job[]> {

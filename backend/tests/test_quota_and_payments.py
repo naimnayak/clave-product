@@ -2,10 +2,13 @@
 
 import hashlib
 import hmac
+import json
 from datetime import timedelta
 
+from app.core.config import get_settings
 from app.core.utils import utcnow
 from app.db import mongo
+from app.services import plans as plans_service
 from tests.helpers import error_code, resume_body, signed_up
 
 
@@ -34,14 +37,20 @@ async def test_free_plan_allows_one_resume(client):
     assert duplicate.status_code == 404  # deleted
 
 
-async def test_uploads_are_free_once_per_file(client):
+async def test_uploads_count_and_save_once_per_file(client):
     headers = await signed_up(client, "uploader")
-    await client.post("/api/resumes", json=resume_body("Uses the free one"), headers=headers)
     await _upload_record("uploader", "file_one")
 
     saved = await client.post("/api/resumes", json=resume_body("Imported", sourceType="upload", sourceFileId="file_one"), headers=headers)
     assert saved.status_code == 201
 
+    # The upload used the free resume, so a second upload no longer bypasses the limit.
+    await _upload_record("uploader", "file_three")
+    over = await client.post("/api/resumes", json=resume_body("Loophole", sourceType="upload", sourceFileId="file_three"), headers=headers)
+    assert over.status_code == 402
+    assert (await mongo.files().find_one({"_id": "file_three"})).get("resumeId") is None  # claim released
+
+    await mongo.users().update_one({"_id": "uploader"}, {"$set": {"subscription.singleResumesBalance": 5}})
     reused = await client.post("/api/resumes", json=resume_body("Again", sourceType="upload", sourceFileId="file_one"), headers=headers)
     assert reused.status_code == 409
 
@@ -122,7 +131,76 @@ async def test_monthly_payment_extends_period(client):
     assert timedelta(days=59) < remaining <= timedelta(days=60)
 
 
-async def test_plans_are_public(client):
+async def test_plans_are_public_and_editable_in_mongo(client):
     plans = (await client.get("/api/subscriptions/plans")).json()["data"]
+    assert list(plans) == ["free", "single", "monthly"]
     assert plans["single"]["price"] == 49
-    assert plans["monthly"]["price"] == 199
+    assert plans["monthly"]["price"] == 199 and plans["monthly"]["name"] == "Clave Pro"
+    assert plans["monthly"]["features"]["jobs"] is True and plans["free"]["features"]["jobs"] is False
+    assert await mongo.plans().count_documents({}) == 3  # seeded on first read
+
+    # The documents are the source of truth: raising the free allowance takes effect immediately.
+    await mongo.plans().update_one({"_id": "free"}, {"$set": {"limits.resumes": 2}})
+    headers = await signed_up(client, "edited-plan")
+    for name in ("One", "Two"):
+        assert (await client.post("/api/resumes", json=resume_body(name), headers=headers)).status_code == 201
+    assert (await client.post("/api/resumes", json=resume_body("Three"), headers=headers)).status_code == 402
+    current = (await client.get("/api/subscriptions/current", headers=headers)).json()["data"]
+    assert current["resumesAllowance"] == 2 and current["isPro"] is False and current["features"]["jobs"] is False
+
+
+async def test_free_resumes_are_capped_per_device(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "free_resume_guard_enabled", True)
+    await mongo.plans().insert_one({**next(p for p in plans_service.default_plans() if p["_id"] == "free"), "limits": {"resumes": 5}})
+    laptop = "laptop-0000000000000001"
+
+    # FREE_RESUMES_PER_DEVICE=2: two accounts on the same laptop share its two free resumes.
+    first = await signed_up(client, "sibling-one")
+    for name in ("A", "B"):
+        response = await client.post("/api/resumes", json=resume_body(name), headers={**first, "X-Clave-Device": laptop})
+        assert response.status_code == 201
+    second = await signed_up(client, "sibling-two")
+    blocked = await client.post("/api/resumes", json=resume_body("C"), headers={**second, "X-Clave-Device": laptop})
+    assert blocked.status_code == 402 and "device" in blocked.json()["error"]["message"]
+
+    # The AI generator's pre-check blocks before spending tokens, too.
+    pre = await client.post("/api/resumes/generate", json={"targetRole": "Analyst"}, headers={**second, "X-Clave-Device": laptop})
+    assert pre.status_code == 402
+
+    # Another device on the same network (same IP in tests) is not affected.
+    phone = "phone-00000000000000002"
+    assert (await client.post("/api/resumes", json=resume_body("D"), headers={**second, "X-Clave-Device": phone})).status_code == 201
+
+    claims = await mongo.free_resume_claims().find({}).to_list()
+    assert len(claims) == 3 and all(len(c["deviceHash"]) == 64 and "laptop" not in c["deviceHash"] for c in claims)
+
+
+def _webhook(body: dict) -> tuple[bytes, dict[str, str]]:
+    raw = json.dumps(body).encode()
+    return raw, {"X-Razorpay-Signature": hmac.new(b"whsec_test", raw, hashlib.sha256).hexdigest(), "Content-Type": "application/json"}
+
+
+async def test_webhook_grants_pro_once(client):
+    headers = await signed_up(client, "webhook-payer")
+    await mongo.payments().insert_one(
+        {"_id": "order_w", "uid": "webhook-payer", "plan": "monthly", "amount": 19900, "currency": "INR", "status": "created", "createdAt": utcnow()}
+    )
+    event = {"event": "payment.captured", "payload": {"payment": {"entity": {"id": "pay_w", "order_id": "order_w", "amount": 19900}}}}
+    raw, sig = _webhook(event)
+
+    forged = await client.post("/api/payments/webhook", content=raw, headers={**sig, "X-Razorpay-Signature": "nope"})
+    assert forged.status_code == 400
+
+    assert (await client.post("/api/payments/webhook", content=raw, headers=sig)).json()["data"]["handled"] is True
+    assert (await client.post("/api/payments/webhook", content=raw, headers=sig)).json()["data"]["handled"] is False  # retried event
+    current = (await client.get("/api/subscriptions/current", headers=headers)).json()["data"]
+    assert current["isPro"] is True and current["features"]["jobs"] is True
+
+    # The browser's verify call arriving afterwards doesn't extend the plan a second time.
+    body = {"razorpayOrderId": "order_w", "razorpayPaymentId": "pay_w", "razorpaySignature": _signature("order_w", "pay_w")}
+    assert (await client.post("/api/payments/verify", json=body, headers=headers)).status_code == 200
+    doc = await mongo.users().find_one({"_id": "webhook-payer"})
+    assert doc["subscription"]["currentPeriodEnd"] - utcnow() <= timedelta(days=30)
+
+    tampered, tsig = _webhook({**event, "payload": {"payment": {"entity": {"id": "pay_x", "order_id": "order_w", "amount": 100}}}})
+    assert (await client.post("/api/payments/webhook", content=tampered, headers=tsig)).json()["data"]["handled"] is False

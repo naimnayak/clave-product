@@ -4,6 +4,8 @@ import { CareerInsight } from '@/components/dashboard/CareerInsight'
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { NextMoves } from '@/components/dashboard/NextMoves'
 import { Opportunities } from '@/components/dashboard/Opportunities'
+import { JobsPreview } from '@/components/jobs/JobsPreview'
+import { ProGate } from '@/components/upgrade/ProGate'
 import { buttonStyles } from '@/components/ui/buttonStyles'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -21,7 +23,6 @@ const formatToday = (date = new Date()) =>
 export function Dashboard() {
   const { user } = useCurrentUser()
   const profile = useAsyncData(getCareerProfile)
-  const jobs = useAsyncData(getRecommendedJobs)
   const firstName = user?.name.split(' ')[0]
 
   return (
@@ -64,12 +65,20 @@ export function Dashboard() {
           </Link>
         }
       >
-        {jobs.status === 'success' && <Opportunities jobs={jobs.data} />}
-        {jobs.status === 'loading' && <LoadingState label="Finding opportunities…" />}
-        {jobs.status === 'error' && (
-          <EmptyState title="Couldn’t load opportunities" description="Please refresh the page to try again." />
-        )}
+        <ProGate fallback={<JobsPreview compact />} loading={<LoadingState label="Finding opportunities…" />}>
+          <ProOpportunities />
+        </ProGate>
       </DashboardSection>
     </div>
   )
+}
+
+function ProOpportunities() {
+  const jobs = useAsyncData(getRecommendedJobs)
+  if (jobs.status === 'loading') return <LoadingState label="Finding opportunities…" />
+  if (jobs.status === 'error') return <EmptyState title="Couldn’t load opportunities" description="Please refresh the page to try again." />
+  if (jobs.data.length === 0) {
+    return <EmptyState title="Your job feed is warming up" description="We’re searching job boards for roles that fit your resume. Check the Jobs page soon." className="py-8" />
+  }
+  return <Opportunities jobs={jobs.data} />
 }

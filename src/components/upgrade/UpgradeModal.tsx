@@ -1,8 +1,10 @@
-import { BarChart3, Briefcase, FileText, Lock, MessageSquare, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { Briefcase, FileText, Loader2, Lock, MessageSquare, Mic, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import upgradeSideImage from '@/assets/upgrade_side_image.png'
+import { useSubscription } from '@/hooks/useSubscription'
+import { startCheckout } from '@/services/payment.service'
+import type { PaidPlan } from '@/services/payment.service'
 import { useUpgradeModalStore } from '@/store/upgradeModalStore'
-import { toast } from '@/store/toastStore'
 
 interface BenefitItem {
   icon: typeof FileText
@@ -12,24 +14,24 @@ interface BenefitItem {
 
 const BENEFITS: BenefitItem[] = [
   {
-    icon: FileText,
-    title: 'Create tailored resumes',
-    description: "Adapt your resume to the job you're applying for.",
-  },
-  {
-    icon: BarChart3,
-    title: 'Advanced ATS insights',
-    description: 'See how closely your resume aligns with a role.',
-  },
-  {
     icon: Briefcase,
-    title: 'Better job recommendations',
-    description: 'Discover opportunities that match your profile.',
+    title: 'Your personal job feed',
+    description: 'Jobs from LinkedIn, Indeed, Naukri, Internshala and Foundit, matched to your resume and job descriptions.',
+  },
+  {
+    icon: FileText,
+    title: 'Unlimited resumes',
+    description: 'Create, tailor and duplicate as many resumes as you need.',
+  },
+  {
+    icon: Mic,
+    title: 'Unlimited mock interviews',
+    description: "Practice for the roles you're targeting, with feedback on every answer.",
   },
   {
     icon: MessageSquare,
-    title: 'AI interview preparation',
-    description: "Practice for the roles you're targeting.",
+    title: 'More from your career assistant',
+    description: '100 messages a day and 300 AI actions, with memory of your goals.',
   },
 ]
 
@@ -41,6 +43,8 @@ export function UpgradeModal({ onUpgrade }: UpgradeModalProps) {
   const isOpen = useUpgradeModalStore((s) => s.isOpen)
   const closeUpgradeModal = useUpgradeModalStore((s) => s.closeUpgradeModal)
   const modalRef = useRef<HTMLDivElement>(null)
+  const [paying, setPaying] = useState<PaidPlan | null>(null)
+  const { isPro } = useSubscription()
 
   // Close on Escape key
   useEffect(() => {
@@ -68,13 +72,20 @@ export function UpgradeModal({ onUpgrade }: UpgradeModalProps) {
 
   if (!isOpen) return null
 
-  const handleUpgradeClick = () => {
+  const pay = async (plan: PaidPlan) => {
     if (onUpgrade) {
       onUpgrade()
-    } else {
-      toast.success('Clave Pro', 'Thank you for your interest! Billing integration is in development.')
+      closeUpgradeModal()
+      return
     }
+    setPaying(plan)
+    // Razorpay opens its own overlay; close ours so the two don't stack.
     closeUpgradeModal()
+    try {
+      await startCheckout(plan)
+    } finally {
+      setPaying(null)
+    }
   }
 
   return (
@@ -144,7 +155,7 @@ export function UpgradeModal({ onUpgrade }: UpgradeModalProps) {
 
             {/* Supporting Copy */}
             <p className="mt-1.5 text-[13px] sm:text-[13.5px] leading-relaxed text-secondary">
-              Get more from Clave with advanced ATS insights, AI tailoring, better job recommendations, and dedicated interview preparation.
+              Clave Pro finds jobs that fit your resume, and gives you unlimited resumes and interview practice.
             </p>
 
             {/* Benefits List */}
@@ -170,15 +181,28 @@ export function UpgradeModal({ onUpgrade }: UpgradeModalProps) {
           <div className="mt-5 sm:mt-6 pt-1">
             <button
               type="button"
-              onClick={handleUpgradeClick}
-              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-primary px-6 text-[15px] font-medium text-on-primary shadow-xs transition-all duration-150 hover:bg-primary-deep active:scale-[0.99] cursor-pointer"
+              onClick={() => void pay('monthly')}
+              disabled={paying !== null || isPro === true}
+              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-primary px-6 text-[15px] font-medium text-on-primary shadow-xs transition-all duration-150 hover:bg-primary-deep active:scale-[0.99] cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
             >
-              <span>Upgrade to Pro →</span>
+              {paying === 'monthly' && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+              <span>{isPro ? 'You’re on Clave Pro' : 'Get Clave Pro · ₹199 / month →'}</span>
             </button>
+
+            {!isPro && (
+              <button
+                type="button"
+                onClick={() => void pay('single')}
+                disabled={paying !== null}
+                className="mt-2 w-full text-center text-[13px] font-medium text-primary-deep underline-offset-2 hover:underline disabled:opacity-60"
+              >
+                Just need one more resume? Buy one for ₹49
+              </button>
+            )}
 
             <div className="mt-2.5 flex items-center justify-center gap-1.5 text-xs text-muted">
               <Lock className="size-3 text-muted" aria-hidden="true" />
-              <span>Secure payment · No auto-renewal</span>
+              <span>Secure payment by Razorpay · 30 days, no auto-renewal</span>
             </div>
           </div>
         </div>

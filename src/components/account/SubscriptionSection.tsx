@@ -4,26 +4,28 @@ import { PlanDecoration } from '@/components/account/AccountIllustrations'
 import { AccountSection } from '@/components/account/AccountSection'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { useAsyncData } from '@/hooks/useAsyncData'
-import { getSubscription } from '@/services/subscription.service'
+import { useSubscription } from '@/hooks/useSubscription'
 import type { Subscription } from '@/services/subscription.service'
 import { useUpgradeModalStore } from '@/store/upgradeModalStore'
 
 type Panel = 'billing' | null
 
+const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+
 function usageLine(sub: Subscription): string {
-  if (sub.isUnlimited) return 'Unlimited resumes, AI generation and tailoring.'
+  if (sub.isPro) {
+    return `Personal job feed, unlimited resumes and mock interviews${sub.currentPeriodEnd ? ` · active until ${formatDate(sub.currentPeriodEnd)}` : ''}.`
+  }
   const credits = sub.singleResumesBalance > 0 ? ` · ${sub.singleResumesBalance} resume credit${sub.singleResumesBalance === 1 ? '' : 's'}` : ''
   return `${Math.min(sub.resumesCreated, sub.resumesAllowance)} of ${sub.resumesAllowance} free resume${sub.resumesAllowance === 1 ? '' : 's'} used${credits}`
 }
 
-/** Plan and usage come from GET /api/subscriptions/current. Payments aren't connected yet, and billing says so. */
+/** Plan and usage from GET /api/subscriptions/current. Upgrades go through Razorpay (UpgradeModal). */
 export function SubscriptionSection() {
   const [panel, setPanel] = useState<Panel>(null)
   const openUpgradeModal = useUpgradeModalStore((s) => s.openUpgradeModal)
-  const subscription = useAsyncData(getSubscription)
-  const sub = subscription.status === 'success' ? subscription.data : null
-  const planName = sub?.isUnlimited ? 'Monthly Unlimited' : 'Free Plan'
+  const { subscription: sub } = useSubscription()
+  const planName = sub?.isPro ? sub.planName || 'Clave Pro' : 'Free Plan'
 
   return (
     <>
@@ -43,7 +45,7 @@ export function SubscriptionSection() {
           </div>
           <div className="relative flex flex-wrap gap-2">
             <Button size="sm" leadingIcon={<ArrowUp className="size-4" />} onClick={openUpgradeModal}>
-              Upgrade to Pro
+              {sub?.isPro ? 'Extend Pro' : 'Upgrade to Pro'}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setPanel('billing')}>
               View billing
@@ -53,24 +55,23 @@ export function SubscriptionSection() {
       </AccountSection>
 
       {panel === 'billing' && (
-        <Modal
-          open
-          onClose={() => setPanel(null)}
-          title="Billing"
-          footer={<Button onClick={() => setPanel(null)}>Done</Button>}
-        >
+        <Modal open onClose={() => setPanel(null)} title="Billing" footer={<Button onClick={() => setPanel(null)}>Done</Button>}>
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
             <div>
               <dt className="text-xs text-muted">Current plan</dt>
-              <dd className="mt-0.5 font-medium text-text">{sub?.isUnlimited ? 'Monthly Unlimited' : 'Free'}</dd>
+              <dd className="mt-0.5 font-medium text-text">{planName}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted">Payment method</dt>
-              <dd className="mt-0.5 font-medium text-text">None on file</dd>
+              <dt className="text-xs text-muted">{sub?.isPro ? 'Active until' : 'Payment method'}</dt>
+              <dd className="mt-0.5 font-medium text-text">
+                {sub?.isPro && sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : 'Razorpay (UPI, cards, net banking)'}
+              </dd>
             </div>
             <div className="col-span-2">
-              <dt className="text-xs text-muted">Invoices</dt>
-              <dd className="mt-0.5 text-secondary">No invoices yet. Billing appears here once you upgrade.</dd>
+              <dt className="text-xs text-muted">Renewal</dt>
+              <dd className="mt-0.5 text-secondary">
+                Clave Pro is a 30-day pass with no auto-renewal. Extending adds 30 days to your current end date. Razorpay emails a receipt for every payment.
+              </dd>
             </div>
           </dl>
         </Modal>

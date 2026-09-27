@@ -12,11 +12,14 @@ export interface MatchReasons {
 
 const phrase = (skill: string) => (skill.includes(' ') ? skill.toLowerCase() : skill)
 
-/** Compares a job with the Career Profile. All wording is template-based; the real version would come from the AI backend. */
+/**
+ * Explains a match. The skill overlap comes from the API (resume + Career Profile), falling back to the
+ * profile's skills for older responses. The wording is template-based.
+ */
 export function deriveMatchReasons(job: Job, detail: JobDetail, profile: ProfileData | null): MatchReasons {
   const mine = new Set((profile?.skills ?? []).map((skill) => skill.toLowerCase()))
-  const shared = job.skills.filter((skill) => mine.has(skill.toLowerCase()))
-  const missing = job.skills.filter((skill) => !mine.has(skill.toLowerCase()))
+  const shared = job.matchedSkills ?? job.skills.filter((skill) => mine.has(skill.toLowerCase()))
+  const missing = job.missingSkills ?? job.skills.filter((skill) => !mine.has(skill.toLowerCase()))
 
   const points: string[] = []
   const openers = ['Strong {} experience', 'Relevant {} background', 'Hands-on experience with {}']
@@ -30,7 +33,7 @@ export function deriveMatchReasons(job: Job, detail: JobDetail, profile: Profile
       points.push(`Fits your preferred ${workTypeLabels[job.workType].toLowerCase()} work style`)
     }
   }
-  if (points.length === 0) points.push('Related to the roles in your Career Profile')
+  if (points.length === 0) points.push('Related to the roles in your resume and job descriptions')
 
   const gapSkill = missing[0] ? phrase(missing[0]) : detail.stretchSkill
   return {

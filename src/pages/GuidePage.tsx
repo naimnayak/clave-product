@@ -96,9 +96,9 @@ const sections: Section[] = [
     title: '6. Plans and limits',
     body: (
       <ul>
-        <li>The Free plan includes one resume created in Clave. Importing your own resume doesn’t use it.</li>
-        <li>Buy a single resume, or go Monthly Unlimited for unlimited resumes and tailoring. See <L to={paths.pricing}>Pricing</L>.</li>
-        <li>AI actions (generation, tailoring, reviews, chat, interview feedback) have a daily allowance that resets at midnight UTC. The assistant shows how many you have left.</li>
+        <li>The Free plan includes five resumes (imported ones count too), one mock interview and a preview of the jobs that match you.</li>
+        <li>Buy a single resume, or go Clave Pro for your personal job feed, unlimited resumes and mock interviews. See <L to={paths.pricing}>Pricing</L>.</li>
+        <li>AI actions (generation, tailoring, reviews, interview feedback) and assistant messages each have a daily allowance that resets at midnight UTC. The assistant shows how many messages you have left.</li>
       </ul>
     ),
   },

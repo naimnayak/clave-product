@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import account, ai, applications, billing, files, jobs, notifications, profile, resumes, support
+from app.api import account, ai, applications, billing, files, job_descriptions, jobs, notifications, profile, resumes, support
 from app.core.config import get_settings
 from app.core.errors import UnhandledErrorMiddleware, register_error_handlers
 from app.core.limiter import limiter
@@ -19,7 +19,7 @@ from app.core.security import init_firebase
 from app.core.utils import ok
 from app.db import mongo
 from app.seed import seed_demo_jobs
-from app.services import email, storage
+from app.services import chat, email, free_resume_guard, job_feed, plans, storage
 from app.services.ai_client import is_configured as ai_configured
 from app.services.job_ingest import ingest
 
@@ -30,8 +30,20 @@ logger = logging.getLogger("clave")
 settings = get_settings()
 
 
+async def _hourly_loop() -> None:
+    """Closes finished chat sessions (saving memory) and refreshes Pro job feeds that are due."""
+    await asyncio.sleep(90)  # let the server finish starting
+    while True:
+        for name, job in (("chat memory", chat.close_due_sessions), ("job feed", job_feed.run_scheduled)):
+            try:
+                await job()
+            except Exception:
+                logger.exception("Hourly %s maintenance failed", name)
+        await asyncio.sleep(3600)
+
+
 async def _maintenance_loop() -> None:
-    """Job feed ingestion (when JOB_INGEST_INTERVAL_HOURS > 0) and expired-upload cleanup."""
+    """Shared-catalog ingestion (when JOB_INGEST_INTERVAL_HOURS > 0) and expired-upload cleanup."""
     hours = settings.job_ingest_interval_hours if settings.job_ingest_interval_hours > 0 else 12
     await asyncio.sleep(60)  # let the server finish starting
     while True:
@@ -49,8 +61,11 @@ async def lifespan(_: FastAPI):
     init_firebase()
     await mongo.ping()
     await mongo.ensure_indexes()
+    catalog = await plans.all_plans()  # seeds the plans collection on first start
+    logger.info("Plans: %s", {pid: {"price": p.get("price"), "limits": p.get("limits")} for pid, p in catalog.items()})
     if settings.seed_demo_jobs:
         await seed_demo_jobs()
+    free_resume_guard.warn_if_unsalted()
 
     if not ai_configured():
         logger.warning("AI model is not configured (AI_MODEL / AI_MODEL_LITE); AI endpoints will return 503.")
@@ -65,12 +80,17 @@ async def lifespan(_: FastAPI):
     if not settings.enforce_plan_limits:
         logger.warning("ENFORCE_PLAN_LIMITS=false: resume quotas are not enforced (development only).")
 
-    task = asyncio.create_task(_maintenance_loop())
+    if settings.razorpay_key_id and not settings.razorpay_webhook_secret:
+        logger.warning("RAZORPAY_WEBHOOK_SECRET is not set; payments only complete when the browser returns to Clave.")
+
+    tasks = [asyncio.create_task(_maintenance_loop()), asyncio.create_task(_hourly_loop())]
     logger.info("Clave API ready (db=%s, ai=%s, uploads=%s)", settings.mongo_db_name, "configured" if ai_configured() else "off", "bucket" if storage.uses_bucket() else "mongo")
     yield
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     await mongo.close()
 
 
@@ -91,12 +111,12 @@ app.add_middleware(
     allow_origins=settings.origins,
     allow_credentials=False,  # Bearer tokens only, no cookies
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Clave-Session"],
+    allow_headers=["Authorization", "Content-Type", "X-Clave-Session", "X-Clave-Device"],
     expose_headers=["Content-Disposition"],
 )
 
 api = APIRouter(prefix="/api")
-for module in (account, profile, resumes, files, ai, jobs, applications, notifications, support, billing):
+for module in (account, profile, resumes, files, ai, jobs, job_descriptions, applications, notifications, support, billing):
     api.include_router(module.router)
 
 

@@ -1,18 +1,24 @@
-"""Subscription status and Razorpay payments (adapted from the ATS backend to the ₹49 / ₹199 Clave plans).
+"""Plans, subscription status and Razorpay payments.
 
-Security fix over the ATS version: the plan is read from the order stored at creation time, never from
-the client's verify request, so a cheaper order cannot be redeemed for a more expensive plan.
+Flow: POST /payments/orders creates a Razorpay order for a plan -> the frontend opens Razorpay Checkout
+-> POST /payments/verify checks the checkout signature and grants the plan. POST /payments/webhook
+(Razorpay dashboard -> Webhooks, events `payment.captured` and `order.paid`) grants it too, for
+payments whose browser closed before verify ran. Granting is idempotent: whichever arrives first
+flips the order from `created` to `paid`, and only that call grants the plan.
+
+The plan and amount are read from the order stored at creation time, never from the client.
 """
 
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 from datetime import timedelta
-from typing import Literal
+from typing import Any, Literal
 
 import razorpay
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import Field
 from pymongo.errors import DuplicateKeyError
 
@@ -22,8 +28,10 @@ from app.core.security import CurrentUser, get_current_user
 from app.core.utils import ok, utcnow
 from app.db import mongo
 from app.schemas.common import CamelModel
+from app.services import plans
 from app.services.accounts import get_user_doc
-from app.services.quota import entitlements, plan_catalog
+from app.services.notifications import notify
+from app.services.quota import entitlements
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Subscriptions"])
@@ -48,18 +56,20 @@ def _razorpay() -> razorpay.Client:
 
 @router.get("/subscriptions/plans")
 async def list_plans():
-    return ok(plan_catalog())
+    return ok(await plans.public_catalog())
 
 
 @router.get("/subscriptions/current")
 async def current_subscription(user: CurrentUser = Depends(get_current_user)):
-    return ok(entitlements(await get_user_doc(user)))
+    return ok(await entitlements(await get_user_doc(user)))
 
 
 @router.post("/payments/orders", status_code=201)
 async def create_order(payload: CreateOrderRequest, user: CurrentUser = Depends(get_current_user)):
     client = _razorpay()
-    plan = plan_catalog()[payload.plan]
+    plan = await plans.get_plan(payload.plan)
+    if not plan.get("active", True):
+        raise ApiError(409, "CONFLICT", "This plan is not available right now.")
     amount = int(plan["price"]) * 100  # paise
     try:
         order = await asyncio.to_thread(
@@ -73,7 +83,51 @@ async def create_order(payload: CreateOrderRequest, user: CurrentUser = Depends(
     await mongo.payments().insert_one(
         {"_id": order["id"], "uid": user.uid, "plan": payload.plan, "amount": amount, "currency": "INR", "status": "created", "createdAt": utcnow()}
     )
-    return ok({"orderId": order["id"], "amount": amount, "currency": "INR", "keyId": get_settings().razorpay_key_id, "plan": payload.plan})
+    return ok({
+        "orderId": order["id"],
+        "amount": amount,
+        "currency": "INR",
+        "keyId": get_settings().razorpay_key_id,
+        "plan": payload.plan,
+        "planName": plan.get("name", ""),
+        "prefill": {"name": user.name or "", "email": user.email},
+    })
+
+
+async def _grant(order: dict[str, Any]) -> None:
+    uid = order["uid"]
+    if order["plan"] == "single":
+        await mongo.users().update_one({"_id": uid}, {"$inc": {"subscription.singleResumesBalance": 1}})
+        await notify(uid, "account", "Resume credit added", "You can create one more resume.", "/resumes")
+        return
+    plan = await plans.get_plan(order["plan"])
+    doc = await mongo.users().find_one({"_id": uid}, {"subscription": 1}) or {}
+    current_end = (doc.get("subscription") or {}).get("currentPeriodEnd")
+    start = max(current_end, utcnow()) if current_end else utcnow()
+    days = int(plan.get("periodDays") or get_settings().monthly_plan_days)
+    await mongo.users().update_one(
+        {"_id": uid},
+        {"$set": {"subscription.plan": plans.PRO_PLAN, "subscription.status": "active", "subscription.currentPeriodEnd": start + timedelta(days=days)}},
+    )
+    await notify(uid, "account", "Welcome to Clave Pro", "Your personal job feed is being prepared.", "/jobs")
+    from app.services import job_feed  # imported here: job_feed depends on this module's siblings
+
+    job_feed.refresh_in_background(uid, "upgrade")
+
+
+async def _fulfil(order: dict[str, Any], payment_id: str) -> bool:
+    """Marks the order paid and grants its plan exactly once. Returns True when this call granted it."""
+    try:
+        claimed = await mongo.payments().find_one_and_update(
+            {"_id": order["_id"], "status": "created"},
+            {"$set": {"status": "paid", "paymentId": payment_id, "paidAt": utcnow()}},
+        )
+    except DuplicateKeyError as exc:
+        raise ApiError(409, "CONFLICT", "This payment was already used.") from exc
+    if claimed is None:
+        return False
+    await _grant(order)
+    return True
 
 
 @router.post("/payments/verify")
@@ -92,24 +146,35 @@ async def verify_payment(payload: VerifyPaymentRequest, user: CurrentUser = Depe
     if not hmac.compare_digest(expected, payload.razorpay_signature):
         raise ApiError(400, "PAYMENT_VERIFICATION_FAILED", "Payment verification failed.")
 
-    try:
-        claimed = await mongo.payments().find_one_and_update(
-            {"_id": order["_id"], "status": "created"},
-            {"$set": {"status": "paid", "paymentId": payload.razorpay_payment_id, "paidAt": utcnow()}},
-        )
-    except DuplicateKeyError as exc:
-        raise ApiError(409, "CONFLICT", "This payment was already used.") from exc
+    await _fulfil(order, payload.razorpay_payment_id)
+    return ok(await entitlements(await get_user_doc(user)), "Payment verified")
 
-    if claimed is not None:  # first verification of this order: grant the plan exactly once
-        if order["plan"] == "single":
-            await mongo.users().update_one({"_id": user.uid}, {"$inc": {"subscription.singleResumesBalance": 1}})
-        else:
-            doc = await get_user_doc(user)
-            current_end = (doc.get("subscription") or {}).get("currentPeriodEnd")
-            start = max(current_end, utcnow()) if current_end else utcnow()
-            await mongo.users().update_one(
-                {"_id": user.uid},
-                {"$set": {"subscription.plan": "monthly", "subscription.status": "active",
-                          "subscription.currentPeriodEnd": start + timedelta(days=settings.monthly_plan_days)}},
-            )
-    return ok(entitlements(await get_user_doc(user)), "Payment verified")
+
+@router.post("/payments/webhook", include_in_schema=False)
+async def razorpay_webhook(request: Request):
+    """Razorpay server-to-server events, authenticated by the webhook signature (no user token)."""
+    secret = get_settings().razorpay_webhook_secret
+    if not secret:
+        raise ApiError(503, "PAYMENTS_NOT_CONFIGURED", "Webhook secret is not configured.")
+    body = await request.body()
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, request.headers.get("x-razorpay-signature", "")):
+        raise ApiError(400, "PAYMENT_VERIFICATION_FAILED", "Invalid webhook signature.")
+
+    try:
+        event = json.loads(body)
+    except ValueError as exc:
+        raise ApiError(400, "BAD_REQUEST", "Invalid webhook body.") from exc
+    if event.get("event") not in {"payment.captured", "order.paid"}:
+        return ok({"handled": False})
+
+    payment = ((event.get("payload") or {}).get("payment") or {}).get("entity") or {}
+    order_id = payment.get("order_id") or (((event.get("payload") or {}).get("order") or {}).get("entity") or {}).get("id")
+    order = await mongo.payments().find_one({"_id": order_id}) if order_id else None
+    if order is None or not payment.get("id"):
+        logger.warning("Razorpay webhook for unknown order %s", order_id)
+        return ok({"handled": False})  # 2xx so Razorpay doesn't retry something we can never match
+    if int(payment.get("amount") or 0) != int(order["amount"]):
+        logger.error("Razorpay webhook amount mismatch for order %s", order_id)
+        return ok({"handled": False})
+    return ok({"handled": await _fulfil(order, payment["id"])})

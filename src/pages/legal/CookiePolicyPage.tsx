@@ -10,7 +10,7 @@ const items: Array<{ name: string; where: string; purpose: string; lasts: string
   { name: 'clave.theme', where: 'Local storage', purpose: 'Your Light, Dark or System appearance choice on this device.', lasts: 'Until you change it or clear browser data' },
   { name: 'clave.saved-jobs', where: 'Local storage', purpose: 'Shows saved jobs straight away while your saved list loads from your account.', lasts: 'Until you clear browser data' },
   { name: 'clave.onboarding', where: 'Session storage', purpose: 'Holds your profile draft during setup so a refresh doesn’t lose it.', lasts: 'Until you close the tab' },
-  { name: 'clave.assistant.<account>', where: 'Session storage', purpose: 'Keeps your current AI Assistant conversation on screen.', lasts: 'Until you close the tab' },
+  { name: 'clave.device-id', where: 'Local storage', purpose: 'A random ID for this browser, used to limit free resumes per device. Only a one-way hash of it is stored on our servers.', lasts: 'Until you clear browser data' },
 ]
 
 const sections: LegalSection[] = [

@@ -93,9 +93,9 @@ const sections: LegalSection[] = [
     title: 'Plans, payments and limits',
     body: (
       <ul>
-        <li><strong>Free:</strong> one resume created in {info.product}. Importing a resume you already have doesn’t use it.</li>
+        <li><strong>Free:</strong> five resumes per account, including imported ones. Free resumes are also limited per device, so creating new accounts doesn’t reset the allowance.</li>
         <li><strong>Single Resume:</strong> ₹{info.singlePrice}, one-time, for one additional resume.</li>
-        <li><strong>Monthly Unlimited:</strong> ₹{info.monthlyPrice} for {info.monthlyDays} days of unlimited resumes and tailoring. It does not renew automatically. You pay again when you want another period.</li>
+        <li><strong>Clave Pro:</strong> ₹{info.monthlyPrice} for {info.monthlyDays} days of unlimited resumes and mock interviews, higher daily AI allowances and a personal job feed. It does not renew automatically. You pay again when you want another period.</li>
         <li>Prices are in Indian Rupees and include applicable taxes unless stated otherwise at checkout. Payments are processed by our payment processor.</li>
         <li>AI actions have a fair-use daily allowance on every plan to keep the service reliable. The current allowance is shown in the app.</li>
         <li>We may change prices for future purchases. Changes don’t affect what you have already paid for.</li>
