@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 import razorpay
 from fastapi import APIRouter, Depends, Request
+from razorpay import errors as razorpay_errors
 from pydantic import Field
 from pymongo.errors import DuplicateKeyError
 
@@ -47,11 +48,25 @@ class VerifyPaymentRequest(CamelModel):
     razorpay_signature: str = Field(min_length=1, max_length=200)
 
 
+MIN_AMOUNT_PAISE = 100  # Razorpay's own floor
+
+
 def _razorpay() -> razorpay.Client:
     settings = get_settings()
     if not (settings.razorpay_key_id and settings.razorpay_key_secret):
         raise ApiError(503, "PAYMENTS_NOT_CONFIGURED", "Payments are not available yet.")
     return razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
+
+
+def _order_error(exc: Exception) -> ApiError:
+    """Maps the Razorpay SDK's exception types to HTTP status codes for order creation."""
+    if isinstance(exc, razorpay_errors.BadRequestError):
+        # The SDK also raises this for bad credentials (Razorpay reuses BAD_REQUEST_ERROR for auth).
+        message = str(exc)
+        if "key_id" in message.lower() or "authentication" in message.lower():
+            return ApiError(401, "PAYMENT_AUTH_FAILED", "Payment gateway rejected our credentials.")
+        return ApiError(400, "BAD_REQUEST", message or "Razorpay rejected this order request.")
+    return ApiError(500, "PAYMENT_GATEWAY_ERROR", "Payment gateway error. Please try again.")
 
 
 @router.get("/subscriptions/plans")
@@ -71,6 +86,9 @@ async def create_order(payload: CreateOrderRequest, user: CurrentUser = Depends(
     if not plan.get("active", True):
         raise ApiError(409, "CONFLICT", "This plan is not available right now.")
     amount = int(plan["price"]) * 100  # paise
+    if amount < MIN_AMOUNT_PAISE:
+        # Not reachable with the current plan prices (min ₹49); guards any future plan misconfiguration.
+        raise ApiError(400, "BAD_REQUEST", f"Order amount must be at least {MIN_AMOUNT_PAISE} paise.")
     try:
         order = await asyncio.to_thread(
             client.order.create,
@@ -78,7 +96,7 @@ async def create_order(payload: CreateOrderRequest, user: CurrentUser = Depends(
         )
     except Exception as exc:  # the SDK raises several error types
         logger.error("Razorpay order creation failed: %s", exc)
-        raise ApiError(502, "PAYMENT_GATEWAY_ERROR", "Payment gateway error. Please try again.") from exc
+        raise _order_error(exc) from exc
 
     await mongo.payments().insert_one(
         {"_id": order["id"], "uid": user.uid, "plan": payload.plan, "amount": amount, "currency": "INR", "status": "created", "createdAt": utcnow()}

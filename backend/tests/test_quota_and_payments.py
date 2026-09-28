@@ -131,6 +131,26 @@ async def test_monthly_payment_extends_period(client):
     assert timedelta(days=59) < remaining <= timedelta(days=60)
 
 
+async def test_order_creation_maps_gateway_errors(client, monkeypatch):
+    headers = await signed_up(client, "gateway-user")
+    from app.api import billing
+    from razorpay import errors as razorpay_errors
+
+    def bad_auth(*_args, **_kwargs):
+        raise razorpay_errors.BadRequestError("Authentication failed")
+
+    monkeypatch.setattr(billing, "_razorpay", lambda: type("C", (), {"order": type("O", (), {"create": staticmethod(bad_auth)})()})())
+    auth_failed = await client.post("/api/payments/orders", json={"plan": "single"}, headers=headers)
+    assert auth_failed.status_code == 401 and error_code(auth_failed) == "PAYMENT_AUTH_FAILED"
+
+    def server_down(*_args, **_kwargs):
+        raise razorpay_errors.ServerError("down")
+
+    monkeypatch.setattr(billing, "_razorpay", lambda: type("C", (), {"order": type("O", (), {"create": staticmethod(server_down)})()})())
+    gateway_down = await client.post("/api/payments/orders", json={"plan": "single"}, headers=headers)
+    assert gateway_down.status_code == 500 and error_code(gateway_down) == "PAYMENT_GATEWAY_ERROR"
+
+
 async def test_plans_are_public_and_editable_in_mongo(client):
     plans = (await client.get("/api/subscriptions/plans")).json()["data"]
     assert list(plans) == ["free", "single", "monthly"]
