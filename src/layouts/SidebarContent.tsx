@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import { ClaveLogo } from '@/components/brand/ClaveLogo'
 import { SidebarBackdrop } from '@/components/layout/SidebarBackdrop'
 import { buttonStyles } from '@/components/ui/buttonStyles'
-import { paths, primaryNav, settingsNav } from '@/routes/navigation'
+import { paths, primaryNav, settingsNav, useFromHere } from '@/routes/navigation'
 import type { NavItem } from '@/routes/navigation'
 import { cn } from '@/utils/cn'
 
@@ -62,6 +62,7 @@ function SidebarLink({ item, collapsed, onNavigate }: { item: NavItem } & Sideba
 }
 
 export function SidebarContent({ collapsed = false, onNavigate }: SidebarContentProps) {
+  const from = useFromHere()
   return (
     <div className="surface-dark relative isolate h-full overflow-hidden border-r border-white/5 bg-[#061a16]">
       <SidebarBackdrop />
@@ -75,6 +76,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
       <div className={cn('py-5', collapsed ? 'flex justify-center' : 'px-4')}>
         <Link
           to={paths.createResume}
+          state={from}
           onClick={onNavigate}
           aria-label={collapsed ? 'Create Resume' : undefined}
           title={collapsed ? 'Create Resume' : undefined}

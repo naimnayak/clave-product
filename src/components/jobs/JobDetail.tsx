@@ -7,13 +7,13 @@ import { JobSkills } from '@/components/jobs/JobSkills'
 import { WhyYouMatch } from '@/components/jobs/WhyYouMatch'
 import { Button } from '@/components/ui/Button'
 import { buttonStyles } from '@/components/ui/buttonStyles'
-import { paths } from '@/routes/navigation'
+import { paths, useFromHere } from '@/routes/navigation'
 import type { Job, JobDetail as JobDetailData } from '@/types/job'
 import { workTypeLabels } from '@/utils/jobFilters'
 import type { MatchReasons } from '@/utils/jobMatchReasons'
 import { postedLong } from '@/utils/relativeTime'
 
-const tailorPath = (job: Job) => `${paths.tailorResume}?job=${job.id}`
+const tailorPath = (job: Job) => `${paths.tailorResume}?job=${encodeURIComponent(job.id)}`
 
 /** As a plain link inside the page, or as a bordered button in the navbar. */
 export function BackToJobs({ variant = 'link' }: { variant?: 'link' | 'button' }) {
@@ -60,6 +60,7 @@ interface JobDetailProps {
 
 /** The full job detail, shared by the desktop split panel and the mobile /jobs/:id page. */
 export function JobDetail({ job, detail, reasons, saved, onToggleSave, headingLevel: Heading, showBack }: JobDetailProps) {
+  const from = useFromHere()
   const place = job.city === 'Remote' ? 'India' : job.city
   const meta = [place, workTypeLabels[job.workType], job.experience, detail.jobType, `Posted ${postedLong(job.postedDaysAgo)}`]
 
@@ -105,7 +106,7 @@ export function JobDetail({ job, detail, reasons, saved, onToggleSave, headingLe
         <JobSkills skills={job.skills} />
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <Link to={tailorPath(job)} className={buttonStyles({ size: 'sm' })}>
+          <Link to={tailorPath(job)} state={from} className={buttonStyles({ size: 'sm' })}>
             <Target className="size-4" aria-hidden />
             Tailor Resume
           </Link>

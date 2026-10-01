@@ -52,7 +52,11 @@ export function TailorResumeFlow() {
   const [loadingResumeId, setLoadingResumeId] = useState<string | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Bumped when the user leaves the Analyzing step, so a late result doesn't pull them forward again.
+  const analysisRun = useRef(0)
 
+  // "Tailor to Job" on a resume card (?resume=<id>) skips the picker and opens that resume on the job step.
+  const [preselected] = useState(() => params.get('resume'))
   useEffect(() => {
     let active = true
     listResumes().then(
@@ -60,6 +64,15 @@ export function TailorResumeFlow() {
         if (!active) return
         setResumes(list)
         setSelectedId((current) => (current && list.some((r) => r.id === current) ? current : (list[0]?.id ?? null)))
+        if (preselected && list.some((r) => r.id === preselected)) {
+          getResumeDocument(preselected)
+            .then((doc) => {
+              if (!active || !doc) return
+              setSource(doc)
+              setStep((current) => (current === 'select' ? 'job' : current))
+            })
+            .catch(() => undefined)
+        }
       },
       () => {
         if (!active) return
@@ -70,7 +83,7 @@ export function TailorResumeFlow() {
     return () => {
       active = false
     }
-  }, [])
+  }, [preselected])
 
   // "Tailor Resume" on a job listing links here with ?job=<id>: prefill the job step from the listing.
   const jobParam = params.get('job')
@@ -190,6 +203,7 @@ export function TailorResumeFlow() {
     }
     setJdError(undefined)
     setIsAnalyzing(true)
+    const run = ++analysisRun.current
 
     // Smooth button state feedback before advancing to progress stage
     await new Promise((resolve) => setTimeout(resolve, 400))
@@ -208,16 +222,23 @@ export function TailorResumeFlow() {
         },
         source
       )
+      if (run !== analysisRun.current) return
       setAnalysis(result)
       setAccepted(new Set(result.changes.map((c) => c.id)))
       setStep('review')
     } catch {
+      if (run !== analysisRun.current) return
       toast.error('Couldn’t analyze the job', 'Please try again.')
       setStep('job')
     } finally {
       timers.forEach(clearTimeout)
       setIsAnalyzing(false)
     }
+  }
+
+  const cancelAnalysis = () => {
+    analysisRun.current += 1
+    setStep('job')
   }
 
   const confirm = async () => {
@@ -317,7 +338,7 @@ export function TailorResumeFlow() {
 
   if (step === 'analyzing') {
     return (
-      <FlowShell title="Analyzing the job" step={{ current: 3, total: 3, label: 'Analyzing' }} onBack={() => setStep('job')}>
+      <FlowShell title="Analyzing the job" step={{ current: 3, total: 3, label: 'Analyzing' }} onBack={cancelAnalysis}>
         <div className="mx-auto max-w-lg">
           <ImportProgress stages={STAGES} current={stage} detail={title || company || undefined} />
         </div>

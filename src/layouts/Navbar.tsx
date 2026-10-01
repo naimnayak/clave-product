@@ -1,5 +1,5 @@
 import { ArrowLeft, Menu } from 'lucide-react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { SettingsNav } from '@/components/settings/SettingsNav'
 import { TemplateSearch } from '@/components/resumes/templates/TemplateSearch'
 import { ResumeSearch } from '@/components/resumes/ResumeSearch'
@@ -10,37 +10,32 @@ import { buttonStyles } from '@/components/ui/buttonStyles'
 import { IconButton } from '@/components/ui/IconButton'
 import { NotificationsBell } from '@/components/navigation/NotificationsBell'
 import { ResumeFlowMobileHeader } from '@/components/navigation/ResumeFlowMobileHeader'
+import { UpgradeButton } from '@/components/upgrade/UpgradeButton'
 import { UserMenu } from '@/layouts/UserMenu'
-import { paths } from '@/routes/navigation'
+import { paths, useGoBack } from '@/routes/navigation'
 
 import { useFlowNavStore } from '@/store/flowNavStore'
-import { useUpgradeModalStore } from '@/store/upgradeModalStore'
 
 interface NavbarProps {
   onOpenNavigation: () => void
   navigationOpen: boolean
 }
 
-/** True for the resume creation flow routes where FlowShell is rendered. */
+/**
+ * Resume creation flow routes where FlowShell is rendered and the navbar shows Back.
+ * The template library has its own Back on the "Choose a Template" header, so it's excluded.
+ */
 const isFlowRoute = (pathname: string) =>
-  pathname.startsWith('/resumes/new/') || pathname === paths.createResume
+  (pathname.startsWith(`${paths.createResume}/`) || pathname === paths.createResume) && pathname !== paths.createFromTemplate
 
 export function Navbar({ onOpenNavigation, navigationOpen }: NavbarProps) {
   const { pathname } = useLocation()
-  const navigate = useNavigate()
   const onFlow = isFlowRoute(pathname)
   const backHandler = useFlowNavStore((s) => s.backHandler)
-  const openUpgradeModal = useUpgradeModalStore((s) => s.openUpgradeModal)
 
-  const handleBack = () => {
-    if (backHandler) {
-      backHandler()
-    } else if (pathname === paths.createResume) {
-      navigate(paths.resumes)
-    } else {
-      navigate(paths.createResume)
-    }
-  }
+  // A step's own handler wins; otherwise return to the page that opened the flow (library, dashboard, a job…).
+  const goBack = useGoBack(pathname === paths.createResume ? paths.resumes : paths.createResume)
+  const handleBack = () => (backHandler ? backHandler() : goBack())
 
   return (
     <header className={`sticky top-0 z-10 flex h-(--navbar-height) shrink-0 items-center justify-between gap-3 bg-surface/95 backdrop-blur px-4 sm:px-6 lg:px-8 ${pathname === paths.assistant || pathname === paths.mockInterview ? 'md:hidden' : ''}`}>
@@ -89,13 +84,7 @@ export function Navbar({ onOpenNavigation, navigationOpen }: NavbarProps) {
 
       {/* Right: upgrade + notifications + user (desktop for all routes, mobile for non-flow routes) */}
       <div className={`ml-auto flex items-center gap-2 sm:gap-3 ${onFlow ? 'hidden md:flex' : ''}`}>
-        <button
-          type="button"
-          onClick={openUpgradeModal}
-          className="inline-flex h-7 items-center justify-center rounded-control bg-[#064E3B] px-3 text-xs font-medium text-white shadow-2xs transition-all duration-150 hover:bg-[#056B4D] active:scale-[0.98] cursor-pointer"
-        >
-          Upgrade
-        </button>
+        <UpgradeButton />
         <NotificationsBell />
         <UserMenu />
       </div>

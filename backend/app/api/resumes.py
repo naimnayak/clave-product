@@ -1,6 +1,9 @@
 """Resume library, builder persistence and the AI resume flows (analyze job, generate, tailor, ATS)."""
 
 import copy
+import re
+from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
@@ -14,15 +17,17 @@ from app.core.utils import ok, utcnow
 from app.db import mongo
 from app.schemas.common import CamelModel, LongText, ShortText, Tags
 from app.schemas.profile import ProfileData
-from app.schemas.resume import JobDescriptionInput, ResumeCreate, ResumeDocumentIn, ResumePatch, TemplateId
+from app.schemas.resume import HeadingText, JobDescriptionInput, ResumeCreate, ResumeDocumentIn, ResumeHeadingKey, ResumePatch, SkillGroupKey, TemplateId
 from app.schemas.settings import UserSettings
 from app.services import ai_tasks, job_descriptions, quota
 from app.services import resume_logic as rl
 from app.services import resumes as resume_store
 from app.services.accounts import get_user_doc, track_usage
 from app.services.ats import compute_ats
+from app.services.resume_docx import build_resume_docx
 
 router = APIRouter(tags=["Resumes"])
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 async def _remember_jd(uid: str, text: str, source: job_descriptions.Source, keywords: list[str], title: str = "", company: str = "") -> None:
@@ -51,6 +56,19 @@ class GenerateRequest(CamelModel):
     attempt: int = Field(default=0, ge=0, le=20)
     template: TemplateId | None = None
     job_analysis: JobAnalysisIn | None = None
+
+
+class DocxExportRequest(CamelModel):
+    """Template details the web app resolves, so the Word file uses the same labels as the preview."""
+
+    headings: dict[ResumeHeadingKey, HeadingText] = {}
+    skill_labels: dict[SkillGroupKey, HeadingText] = {}
+    role: ShortText = ""
+    accent: str = Field(default="#056B4D", pattern=r"^#[0-9a-fA-F]{6}$")
+    font: str = Field(default="Calibri", max_length=60, pattern=r"^[A-Za-z0-9 \-]+$")
+    align: Literal["left", "center"] = "left"
+    uppercase: bool = True
+    skills_mode: Literal["lines", "chips", "grid"] = "lines"
 
 
 class TailorRequest(CamelModel):
@@ -162,6 +180,17 @@ async def update_resume(resume_id: str, payload: ResumeDocumentIn, user: Current
         return_document=ReturnDocument.AFTER,
     )
     return ok(resume_store.summary(updated), "Resume saved")
+
+
+@router.post("/resumes/{resume_id}/export/docx")
+async def export_resume_docx(resume_id: str, payload: DocxExportRequest, user: CurrentUser = Depends(get_current_user)):
+    """The saved resume as a Word document. The app saves pending edits first."""
+    doc = resume_store.document(await resume_store.get_owned(user.uid, resume_id))
+    data = build_resume_docx(doc, payload.dump())
+    name = re.sub(r"\s+", " ", re.sub(r'[\\/:*?"<>|\r\n]+', " ", doc.get("name") or "")).strip() or "Resume"
+    ascii_name = name.encode("ascii", "ignore").decode().strip() or "Resume"
+    disposition = f"attachment; filename=\"{ascii_name}.docx\"; filename*=UTF-8''{quote(name)}.docx"
+    return Response(content=data, media_type=DOCX_MEDIA_TYPE, headers={"Content-Disposition": disposition})
 
 
 @router.patch("/resumes/{resume_id}")

@@ -13,7 +13,8 @@ import { paths } from '@/routes/navigation'
 import { toast } from '@/store/toastStore'
 import { computeAts } from '@/utils/ats'
 import { cn } from '@/utils/cn'
-import { printResume } from '@/utils/printResume'
+import { exportResume } from '@/services/resumeExport.service'
+import type { ResumeExportFormat } from '@/services/resumeExport.service'
 
 type MobileView = 'editor' | 'preview'
 
@@ -111,13 +112,15 @@ export function ResumeEditor({ id }: { id: string }) {
   }
 
   const changeTemplate = (template: typeof doc.template) => update((d) => ({ ...d, template }))
-  const download = async () => {
-    await saveNow()
-    toast.info('Choose “Save as PDF”', 'Pick it as the destination in the print dialog to download your resume.')
+  const download = async (format: ResumeExportFormat) => {
+    // The Word file is built from the saved resume, so pending edits must be saved first.
+    if (!(await saveNow()) && format === 'docx') return
+    if (format === 'pdf') toast.info('Choose “Save as PDF”', 'Pick it as the destination in the print dialog to download your resume.')
     try {
-      await printResume(doc)
+      await exportResume(doc, format)
+      if (format === 'docx') toast.success('Your Word document is downloading')
     } catch (error) {
-      toast.error('Couldn’t prepare the PDF', error instanceof Error ? error.message : 'Please try again.')
+      toast.error(format === 'pdf' ? 'Couldn’t prepare the PDF' : 'Couldn’t create the Word document', error instanceof Error ? error.message : 'Please try again.')
     }
   }
 
@@ -136,7 +139,7 @@ export function ResumeEditor({ id }: { id: string }) {
         onSave={async () => {
           if (await saveNow()) toast.success('Resume saved')
         }}
-        onDownload={() => void download()}
+        onDownload={(format) => void download(format)}
         resumeId={doc.id}
         beforeReview={saveNow}
       />
@@ -168,7 +171,7 @@ export function ResumeEditor({ id }: { id: string }) {
         </div>
         <div className="flex items-center gap-1.5 border-l border-border px-3">
           <TemplateMenu value={doc.template} onChange={changeTemplate} compact />
-          <DownloadButton onClick={() => void download()} compact />
+          <DownloadButton onDownload={(format) => void download(format)} compact />
         </div>
       </div>
 
@@ -219,7 +222,7 @@ export function ResumeEditor({ id }: { id: string }) {
                   transformOrigin: 'top center',
                 }}
               >
-                <ResumePreview doc={doc} />
+                <ResumePreview doc={doc} update={update} />
               </div>
             </div>
 

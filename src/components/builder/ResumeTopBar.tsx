@@ -1,13 +1,15 @@
-import { ArrowLeft, Check, Download, Loader2, Pencil } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, Download, FileText, FileType, Loader2, Pencil } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { AtsScorePopover } from '@/components/builder/AtsScorePopover'
 import { TemplateMenu } from '@/components/builder/TemplateMenu'
 import { Button } from '@/components/ui/Button'
 import { buttonStyles } from '@/components/ui/buttonStyles'
+import { Dropdown, DropdownItem } from '@/components/ui/Dropdown'
 import { IconButton } from '@/components/ui/IconButton'
 import type { SaveState } from '@/hooks/useResumeEditor'
-import { paths } from '@/routes/navigation'
+import { backTarget, paths, useGoBack } from '@/routes/navigation'
+import type { ResumeExportFormat } from '@/services/resumeExport.service'
 import type { TemplateId } from '@/types/resumeDocument'
 import type { AtsResult } from '@/utils/ats'
 import { cn } from '@/utils/cn'
@@ -20,7 +22,7 @@ interface ResumeTopBarProps {
   template: TemplateId
   onTemplateChange: (id: TemplateId) => void
   onSave: () => void
-  onDownload: () => void
+  onDownload: (format: ResumeExportFormat) => void
   /** Enables the AI review in the ATS popover. */
   resumeId?: string
   beforeReview?: () => Promise<unknown>
@@ -94,31 +96,52 @@ function ResumeName({ name, onChange }: { name: string; onChange: (name: string)
   )
 }
 
-/** Download as an icon on narrow screens and a labelled button on wider ones. */
-export function DownloadButton({ onClick, compact }: { onClick: () => void; compact?: boolean }) {
-  return compact ? (
-    <IconButton label="Download PDF" variant="secondary" onClick={onClick}>
-      <Download className="size-4" aria-hidden />
-    </IconButton>
-  ) : (
-    <Button variant="secondary" size="sm" onClick={onClick} leadingIcon={<Download className="size-4" />}>
-      Download
-    </Button>
+/** Download menu (PDF or Word): an icon on narrow screens and a labelled button on wider ones. */
+export function DownloadButton({ onDownload, compact }: { onDownload: (format: ResumeExportFormat) => void; compact?: boolean }) {
+  return (
+    <Dropdown
+      label="Download format"
+      trigger={(triggerProps, open) =>
+        compact ? (
+          <IconButton label="Download resume" variant="secondary" {...triggerProps}>
+            <Download className="size-4" aria-hidden />
+          </IconButton>
+        ) : (
+          <button type="button" className={buttonStyles({ variant: 'secondary', size: 'sm' })} {...triggerProps}>
+            <Download className="size-4" aria-hidden />
+            Download
+            <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} aria-hidden />
+          </button>
+        )
+      }
+    >
+      <DropdownItem icon={FileText} hint=".pdf" onSelect={() => onDownload('pdf')}>
+        PDF
+      </DropdownItem>
+      <DropdownItem icon={FileType} hint=".docx" onSelect={() => onDownload('docx')}>
+        Word document
+      </DropdownItem>
+    </Dropdown>
   )
 }
 
 export function ResumeTopBar({ name, onNameChange, saveState, ats, template, onTemplateChange, onSave, onDownload, resumeId, beforeReview }: ResumeTopBarProps) {
+  // Back returns to the page that opened the editor (library, dashboard, a job…), else the library.
+  const location = useLocation()
+  const goBack = useGoBack(paths.resumes)
+  const back = backTarget(location, paths.resumes)
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 shadow-xs sm:gap-3 sm:px-4">
       {/* Left: back + name + save status */}
-      <Link
-        to={paths.resumes}
+      <button
+        type="button"
+        onClick={goBack}
         className={buttonStyles({ variant: 'secondary', size: 'sm' })}
-        aria-label="Back to Resumes"
+        aria-label={back === paths.resumes ? 'Back to Resumes' : 'Go back'}
       >
         <ArrowLeft className="size-4" aria-hidden />
         <span className="hidden sm:inline">Back</span>
-      </Link>
+      </button>
 
       <span className="hidden h-5 w-px bg-border sm:block" aria-hidden />
 
@@ -137,7 +160,7 @@ export function ResumeTopBar({ name, onNameChange, saveState, ats, template, onT
           <TemplateMenu value={template} onChange={onTemplateChange} />
         </span>
         <span className="hidden md:block">
-          <DownloadButton onClick={onDownload} />
+          <DownloadButton onDownload={onDownload} />
         </span>
         <Button size="sm" onClick={onSave} disabled={saveState === 'saving'}>
           Save

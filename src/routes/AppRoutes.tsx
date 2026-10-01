@@ -50,20 +50,22 @@ import { ReviewPage } from '@/pages/onboarding/ReviewPage'
 import { WelcomePage } from '@/pages/onboarding/WelcomePage'
 import { SignupPage } from '@/pages/auth/SignupPage'
 import { GuestOnly, OnboardingOnly, RequireAuth, RequireOnboarding } from '@/routes/guards'
-import { paths } from '@/routes/navigation'
+import { paths, resumeEditRoute, resumePath } from '@/routes/navigation'
 
 const AdminApp = lazy(() => import('@/admin/AdminApp'))
 
 
 /** Old links keep working: forward to the new route and keep any query string. */
 function Redirect({ to }: { to: string }) {
-  const { search } = useLocation()
-  return <Navigate to={`${to}${search}`} replace />
+  const { search, hash, state } = useLocation()
+  const query = search && to.includes('?') ? `&${search.slice(1)}` : search
+  return <Navigate to={`${to}${query}${hash}`} state={state} replace />
 }
 
 function LegacyResumeRedirect() {
-  const { resumeId } = useParams()
-  return <Navigate to={`/resumes/${resumeId}/edit`} replace />
+  const { resumeId = '' } = useParams()
+  const { search, state } = useLocation()
+  return <Navigate to={`${resumePath(resumeId)}${search}`} state={state} replace />
 }
 
 function UpgradeRouteRedirect() {
@@ -89,6 +91,20 @@ function GuideEntry() {
         <GuidePage />
       </LandingContainer>
       <LandingFooter />
+    </div>
+  )
+}
+
+/** Unknown URLs: inside the app shell when signed in, on the marketing site otherwise (no sign-in detour). */
+function NotFoundLayout() {
+  return useInApp() ? <AppLayout /> : <MarketingLayout />
+}
+
+function NotFoundEntry() {
+  if (useInApp()) return <NotFound />
+  return (
+    <div data-theme="dark" className="flex flex-1 flex-col bg-[#030706] text-text">
+      <NotFound homePath={paths.landing} homeLabel="Back to Home" />
     </div>
   )
 }
@@ -176,7 +192,7 @@ export function AppRoutes() {
 
         <Route element={<RequireOnboarding />}>
           {/* The editor is the shared destination of all four creation flows: a focused full-screen workspace outside the AppShell. */}
-          <Route path="/resumes/:resumeId/edit" element={<ResumeEditorPage />} />
+          <Route path={resumeEditRoute} element={<ResumeEditorPage />} />
           <Route element={<AppLayout />}>
             <Route path={paths.dashboard} element={<Dashboard />} />
             <Route path={paths.careerProfile} element={<ProfilePage />} />
@@ -192,16 +208,19 @@ export function AppRoutes() {
             <Route path="/resumes/builder" element={<Redirect to={paths.createManual} />} />
             <Route path="/resumes/:resumeId" element={<LegacyResumeRedirect />} />
             <Route path={paths.importResume} element={<UploadResumePage />} />
-            <Route path="/jobs/saved" element={<Navigate to={`${paths.jobs}?view=saved`} replace />} />
+            <Route path="/jobs/saved" element={<Redirect to={`${paths.jobs}?view=saved`} />} />
             <Route path="/jobs/:jobId" element={<JobDetailPage />} />
             <Route path={paths.assistant} element={<AIAssistantPage />} />
             <Route path={paths.account} element={<AccountPage />} />
             <Route path={paths.settings} element={<SettingsPage />} />
             <Route path={paths.mockInterview} element={<AIMockInterviewPage />} />
             <Route path={paths.upgrade} element={<UpgradeRouteRedirect />} />
-            <Route path="*" element={<NotFound />} />
           </Route>
         </Route>
+      </Route>
+
+      <Route element={<NotFoundLayout />}>
+        <Route path="*" element={<NotFoundEntry />} />
       </Route>
     </Routes>
   )

@@ -7,6 +7,7 @@ import {
   EducationSection,
   ExperienceSection,
   ProjectsSection,
+  SectionHeadingField,
   SkillsSection,
   SummarySection,
 } from '@/components/builder/BuilderSections'
@@ -14,19 +15,19 @@ import { ResumeSectionEditor } from '@/components/builder/ResumeSectionEditor'
 import type { SectionStatus } from '@/components/builder/ResumeSectionEditor'
 import type { ResumeUpdater } from '@/hooks/useResumeEditor'
 import type { ResumeDocument, ResumeSectionKey } from '@/types/resumeDocument'
+import { headingFor } from '@/utils/resumeLabels'
 
 interface SectionMeta {
-  title: string
   icon: LucideIcon
   Component: React.ComponentType<{ doc: ResumeDocument; update: ResumeUpdater }>
 }
 
 const bodySections: Record<ResumeSectionKey, SectionMeta> = {
-  experience: { title: 'Experience', icon: Briefcase, Component: ExperienceSection },
-  education: { title: 'Education', icon: GraduationCap, Component: EducationSection },
-  projects: { title: 'Projects', icon: FolderGit2, Component: ProjectsSection },
-  skills: { title: 'Skills', icon: Layers, Component: SkillsSection },
-  certifications: { title: 'Certifications', icon: Award, Component: CertificationsSection },
+  experience: { icon: Briefcase, Component: ExperienceSection },
+  education: { icon: GraduationCap, Component: EducationSection },
+  projects: { icon: FolderGit2, Component: ProjectsSection },
+  skills: { icon: Layers, Component: SkillsSection },
+  certifications: { icon: Award, Component: CertificationsSection },
 } as const
 
 // ─── Hint text ────────────────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ export function EditorPanel({ doc, update }: { doc: ResumeDocument; update: Resu
       </div>
 
       <ResumeSectionEditor
-        title="Contact Information"
+        title="Header & Contact"
         icon={User}
         status={statusFor('contact', doc)}
         open={openKey === 'contact'}
@@ -135,18 +136,20 @@ export function EditorPanel({ doc, update }: { doc: ResumeDocument; update: Resu
       </ResumeSectionEditor>
 
       <ResumeSectionEditor
-        title="Professional Summary"
+        title={headingFor(doc, 'summary')}
         icon={Sparkles}
         status={statusFor('summary', doc)}
         open={openKey === 'summary'}
         hint={hintFor('summary', doc)}
         onToggle={() => toggle('summary')}
       >
+        <SectionHeadingField doc={doc} update={update} sectionKey="summary" />
         <SummarySection doc={doc} update={update} />
       </ResumeSectionEditor>
 
       {doc.sectionOrder.map((key, index) => {
-        const { title, icon, Component } = bodySections[key]
+        const { icon, Component } = bodySections[key]
+        const title = headingFor(doc, key)
         return (
           <ResumeSectionEditor
             key={key}
@@ -163,6 +166,7 @@ export function EditorPanel({ doc, update }: { doc: ResumeDocument; update: Resu
               onMoveDown: () => move(key, 1),
             }}
           >
+            <SectionHeadingField doc={doc} update={update} sectionKey={key} />
             <Component doc={doc} update={update} />
           </ResumeSectionEditor>
         )

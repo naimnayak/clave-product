@@ -1,15 +1,20 @@
-import { BookOpen, LogOut, Palette, ShieldCheck, User, UserCog } from 'lucide-react'
+import { BookOpen, LogOut, Moon, ShieldCheck, Sun, User, UserCog } from 'lucide-react'
 import { ADMIN_HOST, adminUrl } from '@/admin/host'
 import { Avatar } from '@/components/ui/Avatar'
 import { Dropdown, DropdownItem, DropdownLabel, DropdownSeparator } from '@/components/ui/Dropdown'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { paths } from '@/routes/navigation'
 import { useAuthStore } from '@/store/authStore'
+import { resolveTheme, useThemeStore } from '@/store/themeStore'
 
 export function UserMenu() {
   const { user } = useCurrentUser()
   const signOut = useAuthStore((state) => state.signOut)
   const name = user?.name ?? 'Account'
+  // Quick Light/Dark switch; Settings → Appearance also offers "System".
+  const preference = useThemeStore((state) => state.preference)
+  const setPreference = useThemeStore((state) => state.setPreference)
+  const isDark = resolveTheme(preference) === 'dark'
 
   return (
     <Dropdown
@@ -53,8 +58,8 @@ export function UserMenu() {
             Admin panel
           </DropdownItem>
         ))}
-      <DropdownItem icon={Palette} hint="Light" disabled>
-        Theme
+      <DropdownItem icon={isDark ? Sun : Moon} hint={preference === 'system' ? `System · ${isDark ? 'Dark' : 'Light'}` : isDark ? 'Dark' : 'Light'} onSelect={() => setPreference(isDark ? 'light' : 'dark')}>
+        {isDark ? 'Switch to light theme' : 'Switch to dark theme'}
       </DropdownItem>
       <DropdownSeparator />
       <DropdownItem

@@ -5,6 +5,8 @@ import { Field } from '@/components/ui/Field'
 
 interface TagInputProps {
   label?: string
+  /** Accessible name when the visible label lives outside the field. */
+  ariaLabel?: string
   hint?: string
   error?: string
   placeholder?: string
@@ -14,7 +16,7 @@ interface TagInputProps {
 }
 
 /** Type and press Enter or comma to add; Backspace on an empty field removes the last tag. */
-export function TagInput({ label, hint, error, placeholder, value, onChange, className }: TagInputProps) {
+export function TagInput({ label, ariaLabel, hint, error, placeholder, value, onChange, className }: TagInputProps) {
   const [draft, setDraft] = useState('')
 
   const add = (raw: string) => {
@@ -61,6 +63,7 @@ export function TagInput({ label, hint, error, placeholder, value, onChange, cla
           ))}
           <input
             {...control}
+            aria-label={ariaLabel}
             value={draft}
             placeholder={value.length === 0 ? placeholder : undefined}
             onChange={(event) => setDraft(event.target.value)}

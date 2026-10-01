@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { AuthDivider, AuthHeading, FormError, GoogleButton } from '@/components/auth/AuthParts'
 import { Button } from '@/components/ui/Button'
 import { Checkbox } from '@/components/ui/Checkbox'
@@ -12,6 +12,8 @@ import { useAuthStore } from '@/store/authStore'
 import { isValidEmail } from '@/utils/validation'
 
 export function LoginPage() {
+  // Forwarded to the other auth pages so signing in still returns to the page that asked for it.
+  const { state: routerState } = useLocation()
   const signIn = useAuthStore((state) => state.signIn)
   const signInWithGoogle = useAuthStore((state) => state.signInWithGoogle)
   const [email, setEmail] = useState('')
@@ -69,7 +71,7 @@ export function LoginPage() {
         />
         <div className="flex items-center justify-between gap-4">
           <Checkbox label="Remember me" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-          <Link to={paths.forgotPassword} className={`text-sm ${linkStyles}`}>
+          <Link to={paths.forgotPassword} state={routerState} className={`text-sm ${linkStyles}`}>
             Forgot password?
           </Link>
         </div>
@@ -96,7 +98,7 @@ export function LoginPage() {
       </p>
       <p className="mt-6 text-center text-sm text-secondary">
         New to Clave?{' '}
-        <Link to={paths.signup} className={linkStyles}>
+        <Link to={paths.signup} state={routerState} className={linkStyles}>
           Sign up
         </Link>
       </p>

@@ -1,9 +1,9 @@
 import { Bell, BellOff, Briefcase, FileText, ListChecks, ShieldCheck, Sparkles } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { IconButton } from '@/components/ui/IconButton'
-import { paths } from '@/routes/navigation'
+import { fromHere, paths } from '@/routes/navigation'
 import { listNotifications, markNotificationsRead } from '@/services/notifications.service'
 import type { AppNotification } from '@/services/notifications.service'
 import { useAuthStore } from '@/store/authStore'
@@ -28,6 +28,7 @@ export function NotificationsBell() {
   const rootRef = useRef<HTMLDivElement>(null)
   const panelId = useId()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const refresh = useCallback(async () => {
     try {
@@ -72,7 +73,8 @@ export function NotificationsBell() {
   const openItem = (item: AppNotification) => {
     if (!item.read) void markRead([item.id])
     setOpen(false)
-    if (item.link) navigate(item.link)
+    // Pages with their own Back (the editor, flows) return to where the notification was opened.
+    if (item.link?.startsWith('/') && !item.link.startsWith('//')) navigate(item.link, { state: fromHere(location) })
   }
 
   return (

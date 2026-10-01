@@ -140,9 +140,9 @@ export const apiClient = {
   put: <T>(path: string, body: unknown, timeoutMs?: number) => request<T>(path, { method: 'PUT', body, timeoutMs }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body }),
   delete: (path: string) => request<void>(path, { method: 'DELETE' }),
-  /** GET a file and save it through the browser. */
-  download: async (path: string, fileName: string) => {
-    const blob = await request<Blob>(path, { blob: true, timeoutMs: 60_000 })
+  /** GET a file (or POST `body` for a generated one) and save it through the browser. */
+  download: async (path: string, fileName: string, body?: unknown) => {
+    const blob = await request<Blob>(path, { blob: true, timeoutMs: 60_000, ...(body !== undefined && { method: 'POST', body }) })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url

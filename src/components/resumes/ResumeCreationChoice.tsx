@@ -2,6 +2,7 @@ import { ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/Badge'
 import { createPaths } from '@/components/resumes/createPaths'
+import { useFromHere } from '@/routes/navigation'
 import { cn } from '@/utils/cn'
 
 interface ResumeCreationChoiceProps {
@@ -14,12 +15,15 @@ interface ResumeCreationChoiceProps {
 
 /** The four creation paths. Each leads to its own preparation flow, not straight to the editor. */
 export function ResumeCreationChoice({ variant = 'compact', compact, className }: ResumeCreationChoiceProps) {
+  // Each flow's Back returns here (the library or the Create a Resume page).
+  const from = useFromHere()
   return (
     <ul className={cn('grid gap-3', className)}>
       {createPaths.map(({ id, title, description, flow, to, icon: Icon, featured }) => (
         <li key={id}>
           <Link
             to={to}
+            state={from}
             className={cn(
               'group flex h-full rounded-default border transition-all hover:-translate-y-px hover:shadow-card',
               compact ? 'flex-col items-start gap-2.5 p-3 sm:flex-row sm:items-center sm:gap-3 sm:p-3.5' : 'items-center gap-4 p-4',

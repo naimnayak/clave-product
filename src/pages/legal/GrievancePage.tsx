@@ -1,6 +1,7 @@
 import { LegalDocument, LegalLink, MailLink } from '@/components/legal/LegalDocument'
 import type { LegalSection } from '@/components/legal/LegalDocument'
 import { legalInfo as info, legalPaths } from '@/components/legal/legalInfo'
+import { paths } from '@/routes/navigation'
 
 const sections: LegalSection[] = [
   {
@@ -78,7 +79,7 @@ export function GrievancePage() {
       title="Grievance Redressal"
       summary={
         <>
-          For everyday questions, <LegalLink to="/contact">contact support</LegalLink>. If support hasn’t solved your problem, or it concerns your personal data or
+          For everyday questions, <LegalLink to={paths.contact}>contact support</LegalLink>. If support hasn’t solved your problem, or it concerns your personal data or
           unlawful content, write to our Grievance Officer.
         </>
       }

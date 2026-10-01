@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { linkStyles } from '@/components/ui/linkStyles'
+import { legalPaths } from '@/components/legal/legalInfo'
 import { paths } from '@/routes/navigation'
 
 interface Section {
@@ -110,7 +111,7 @@ const sections: Section[] = [
       <ul>
         <li>In <L to={paths.account}>Account</L> you can change your password, connect Google, see active sessions and sign out other devices.</li>
         <li>In <L to={paths.settings}>Settings</L> you can choose notifications and emails, turn Personalize AI off, download all your data, and pick light or dark appearance.</li>
-        <li>Deleting your account removes your profile, resumes and uploads. Read the <L to="/legal/privacy">Privacy Policy</L> for details.</li>
+        <li>Deleting your account removes your profile, resumes and uploads. Read the <L to={legalPaths.privacy}>Privacy Policy</L> for details.</li>
       </ul>
     ),
   },

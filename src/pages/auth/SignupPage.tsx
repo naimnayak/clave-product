@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { AuthDivider, AuthHeading, FormError, GoogleButton } from '@/components/auth/AuthParts'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -13,6 +13,7 @@ import { isValidEmail } from '@/utils/validation'
 const MIN_PASSWORD_LENGTH = 8
 
 export function SignupPage() {
+  const { state: routerState } = useLocation()
   const signUp = useAuthStore((state) => state.signUp)
   const signInWithGoogle = useAuthStore((state) => state.signInWithGoogle)
   const [name, setName] = useState('')
@@ -100,7 +101,7 @@ export function SignupPage() {
       </p>
       <p className="mt-6 text-center text-sm text-secondary">
         Already have an account?{' '}
-        <Link to={paths.login} className={linkStyles}>
+        <Link to={paths.login} state={routerState} className={linkStyles}>
           Log in
         </Link>
       </p>

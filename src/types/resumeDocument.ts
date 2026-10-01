@@ -1,8 +1,15 @@
 export type TemplateId = 'classic' | 'modern' | 'compact' | 'minimal' | 'student' | 'designer' | 'engineer' | 'business' | 'academic' | 'executive'
 export type ResumeSectionKey = 'experience' | 'education' | 'projects' | 'skills' | 'certifications'
+/** Every section with a printed heading: the body sections plus the summary. */
+export type ResumeHeadingKey = ResumeSectionKey | 'summary'
+export type SkillGroupKey = 'technical' | 'tools' | 'other'
 
 export interface ResumeContact {
   name: string
+  /** Job role shown between the name and the contact line. Unset (null) falls back to the target role on templates that show one; '' hides it. */
+  role?: string | null
+  /** Short one-line pitch under the job role. */
+  tagline?: string
   email: string
   phone: string
   location: string
@@ -62,6 +69,10 @@ export interface ResumeContent {
   projects: ResumeProject[]
   skills: ResumeSkills
   certifications: ResumeCertification[]
+  /** Custom section headings; missing or blank entries use the template's heading. */
+  headings?: Partial<Record<ResumeHeadingKey, string>>
+  /** Custom skill group headings, e.g. "Technical Skills" → "Languages". */
+  skillLabels?: Partial<Record<SkillGroupKey, string>>
 }
 
 export interface ResumeDocument {

@@ -10,6 +10,9 @@ TemplateId = Literal[
     "classic", "modern", "compact", "minimal", "student", "designer", "engineer", "business", "academic", "executive"
 ]
 ResumeSectionKey = Literal["experience", "education", "projects", "skills", "certifications"]
+ResumeHeadingKey = Literal["summary", "experience", "education", "projects", "skills", "certifications"]
+SkillGroupKey = Literal["technical", "tools", "other"]
+HeadingText = Annotated[str, Field(max_length=80)]
 ResumeType = Literal["base", "tailored"]
 SourceType = Literal["manual", "template", "ai", "upload", "tailored", "duplicate"]
 
@@ -19,6 +22,9 @@ Bullets = Annotated[list[Text], Field(max_length=30)]
 
 class ResumeContact(CamelModel):
     name: ShortText = ""
+    # None: use the target role on templates that show one; "" hides the line.
+    role: ShortText | None = None
+    tagline: ShortText = ""
     email: ShortText = ""
     phone: ShortText = ""
     location: ShortText = ""
@@ -78,6 +84,9 @@ class ResumeContent(CamelModel):
     projects: Annotated[list[ResumeProject], Field(max_length=50)] = []
     skills: ResumeSkills = Field(default_factory=ResumeSkills)
     certifications: Annotated[list[ResumeCertification], Field(max_length=50)] = []
+    # Custom headings typed in the editor; missing keys use the template's heading.
+    headings: dict[ResumeHeadingKey, HeadingText] = {}
+    skill_labels: dict[SkillGroupKey, HeadingText] = {}
 
 
 class ResumeDocumentIn(CamelModel):

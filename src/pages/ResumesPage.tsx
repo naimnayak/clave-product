@@ -1,6 +1,6 @@
 import { FileText, SearchX } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ResumeCard } from '@/components/resumes/ResumeCard'
 import { ResumeCreationActions } from '@/components/resumes/ResumeCreationActions'
 import { DeleteResumeDialog, RenameResumeDialog } from '@/components/resumes/ResumeDialogs'
@@ -14,12 +14,13 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { useResumeQuery } from '@/hooks/useResumeQuery'
 import { useResumes } from '@/hooks/useResumes'
-import { paths, resumePath } from '@/routes/navigation'
+import { fromHere, paths, resumePath } from '@/routes/navigation'
 import { getResumeDocument } from '@/services/resumeDocument.service'
+import { exportResume } from '@/services/resumeExport.service'
+import type { ResumeExportFormat } from '@/services/resumeExport.service'
 import { toast } from '@/store/toastStore'
 import type { Resume } from '@/types/resume'
 import { cn } from '@/utils/cn'
-import { printResume } from '@/utils/printResume'
 import { resumeStatus } from '@/utils/resumeStatus'
 
 const DAY = 86_400_000
@@ -31,6 +32,7 @@ const matchesFilter = (resume: Resume, filter: ResumeFilter) =>
 export function ResumesPage() {
   const { state, rename, duplicate, remove } = useResumes()
   const navigate = useNavigate()
+  const from = fromHere(useLocation())
   const [query, setQuery] = useResumeQuery()
   const [filter, setFilter] = useState<ResumeFilter>('all')
   const [sort, setSort] = useState<ResumeSort>('updated')
@@ -41,14 +43,15 @@ export function ResumesPage() {
 
   const resumes = state.status === 'ready' ? state.resumes : []
 
-  const downloadPdf = async (resume: Resume) => {
+  const download = async (resume: Resume, format: ResumeExportFormat) => {
     try {
       const doc = await getResumeDocument(resume.id)
       if (!doc) throw new Error('This resume no longer exists.')
-      toast.info('Choose “Save as PDF”', 'Pick it as the destination in the print dialog to download your resume.')
-      await printResume(doc)
+      if (format === 'pdf') toast.info('Choose “Save as PDF”', 'Pick it as the destination in the print dialog to download your resume.')
+      await exportResume(doc, format)
+      if (format === 'docx') toast.success('Your Word document is downloading')
     } catch (error) {
-      toast.error('Couldn’t prepare the PDF', error instanceof Error ? error.message : 'Please try again.')
+      toast.error(format === 'pdf' ? 'Couldn’t prepare the PDF' : 'Couldn’t create the Word document', error instanceof Error ? error.message : 'Please try again.')
     }
   }
   const needle = query.trim().toLowerCase()
@@ -90,7 +93,7 @@ export function ResumesPage() {
             description="Create your first ATS-friendly resume from your Career Profile."
             action={
               <div className="flex flex-wrap justify-center gap-3">
-                <Link to={paths.createResume} className={buttonStyles()}>
+                <Link to={paths.createResume} state={from} className={buttonStyles()}>
                   Create Resume
                 </Link>
                 <Link to={paths.importResume} className={buttonStyles({ variant: 'secondary' })}>
@@ -133,8 +136,8 @@ export function ResumesPage() {
                     await duplicate(resume.id)
                     toast.success('Resume duplicated', `${resume.name} (Copy)`)
                   }}
-                  onTailor={() => navigate(`${paths.tailorResume}?resume=${resume.id}`)}
-                  onDownload={() => void downloadPdf(resume)}
+                  onTailor={() => navigate(`${paths.tailorResume}?resume=${encodeURIComponent(resume.id)}`, { state: from })}
+                  onDownload={(format) => void download(resume, format)}
                   onDelete={() => setDeleting(resume)}
                 />
               </li>
@@ -144,7 +147,7 @@ export function ResumesPage() {
       </section>
 
       {previewing && (
-        <ResumePreviewDialog resume={previewing} onClose={() => setPreviewing(null)} onOpen={() => navigate(resumePath(previewing.id))} />
+        <ResumePreviewDialog resume={previewing} onClose={() => setPreviewing(null)} onOpen={() => navigate(resumePath(previewing.id), { state: from })} />
       )}
       {renaming && (
         <RenameResumeDialog

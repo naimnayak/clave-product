@@ -1,17 +1,17 @@
 import { ArrowLeft, SearchX } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { TemplateCategories } from '@/components/resumes/templates/TemplateCategories'
 import type { CategoryFilter } from '@/components/resumes/templates/TemplateCategories'
 import { TemplateGrid } from '@/components/resumes/templates/TemplateGrid'
 import { TemplatePreviewModal } from '@/components/resumes/templates/TemplatePreviewModal'
 import { TemplateSearch } from '@/components/resumes/templates/TemplateSearch'
 import { Button } from '@/components/ui/Button'
-import { buttonStyles } from '@/components/ui/buttonStyles'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { IconButton } from '@/components/ui/IconButton'
 import { useTemplateQuery } from '@/hooks/useTemplateQuery'
 import { templateLibrary } from '@/mocks/templates.mock'
-import { resumePath, paths } from '@/routes/navigation'
+import { paths, resumePath, useGoBack } from '@/routes/navigation'
 import { createResumeDocument } from '@/services/resumeDocument.service'
 import { toast } from '@/store/toastStore'
 import type { TemplateId } from '@/types/resumeDocument'
@@ -21,6 +21,7 @@ import { templates } from '@/utils/resumeTemplates'
 /** Browse → Compare → Preview → Use Template. Choosing opens the existing editor with the template applied. */
 export function TemplateLibrary() {
   const navigate = useNavigate()
+  const goBack = useGoBack(paths.createResume)
   const [query, setQuery] = useTemplateQuery()
   const [category, setCategory] = useState<CategoryFilter>('All')
   const [previewing, setPreviewing] = useState<TemplateInfo | null>(null)
@@ -48,15 +49,15 @@ export function TemplateLibrary() {
 
   return (
     <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      {/* The page's only Back control lives on its header (the navbar shows none on this route). */}
+      <header className="flex items-start gap-3">
+        <IconButton label="Go back" variant="secondary" onClick={goBack} className="mt-0.5 shrink-0 sm:mt-1">
+          <ArrowLeft className="size-4" aria-hidden />
+        </IconButton>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-text sm:text-3xl">Choose a Template</h1>
           <p className="mt-1 text-secondary">Start with a professionally structured resume.</p>
         </div>
-        <Link to={paths.resumes} className={`${buttonStyles({ variant: 'secondary' })} self-start hidden md:inline-flex`}>
-          <ArrowLeft className="size-4" aria-hidden />
-          Back to Resumes
-        </Link>
       </header>
 
       <TemplateSearch className="md:hidden" />

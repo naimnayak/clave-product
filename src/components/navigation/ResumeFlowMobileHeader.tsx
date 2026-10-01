@@ -2,9 +2,9 @@ import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ClaveLogo } from '@/components/brand/ClaveLogo'
 import { NotificationsBell } from '@/components/navigation/NotificationsBell'
+import { UpgradeButton } from '@/components/upgrade/UpgradeButton'
 import { UserMenu } from '@/layouts/UserMenu'
 import { paths } from '@/routes/navigation'
-import { useUpgradeModalStore } from '@/store/upgradeModalStore'
 
 interface ResumeFlowMobileHeaderProps {
   onBack: () => void
@@ -18,8 +18,6 @@ interface ResumeFlowMobileHeaderProps {
  * ensuring full visual consistency across all 4 flows on mobile viewports.
  */
 export function ResumeFlowMobileHeader({ onBack }: ResumeFlowMobileHeaderProps) {
-  const openUpgradeModal = useUpgradeModalStore((s) => s.openUpgradeModal)
-
   return (
     <div className="flex w-full items-center justify-between gap-2 md:hidden">
       {/* LEFT: 40x40px icon-only back arrow + Clave logo */}
@@ -40,13 +38,7 @@ export function ResumeFlowMobileHeader({ onBack }: ResumeFlowMobileHeaderProps) 
 
       {/* RIGHT: Upgrade, Notification, Avatar */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <button
-          type="button"
-          onClick={openUpgradeModal}
-          className="inline-flex h-7 items-center justify-center rounded-control bg-[#064E3B] px-2.5 text-xs font-medium text-white shadow-2xs transition-all duration-150 hover:bg-[#056B4D] active:scale-[0.98] cursor-pointer"
-        >
-          Upgrade
-        </button>
+        <UpgradeButton />
 
         <NotificationsBell />
 

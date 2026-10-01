@@ -1,3 +1,4 @@
+import { Pencil } from 'lucide-react'
 import { AiActions } from '@/components/builder/AiActions'
 import { BulletsEditor } from '@/components/builder/BulletsEditor'
 import { EntryList } from '@/components/builder/EntryList'
@@ -5,7 +6,8 @@ import { Input } from '@/components/ui/Input'
 import { TagInput } from '@/components/ui/TagInput'
 import { Textarea } from '@/components/ui/Textarea'
 import type { ResumeUpdater } from '@/hooks/useResumeEditor'
-import type { ResumeContact, ResumeContent, ResumeDocument } from '@/types/resumeDocument'
+import type { ResumeContact, ResumeContent, ResumeDocument, ResumeHeadingKey, SkillGroupKey } from '@/types/resumeDocument'
+import { defaultSkillLabels, jobRoleFor, templateHeading, withHeading, withSkillLabel } from '@/utils/resumeLabels'
 
 interface SectionProps {
   doc: ResumeDocument
@@ -23,13 +25,64 @@ const skillsContext = (doc: ResumeDocument) => ({
   skills: [...doc.content.skills.technical, ...doc.content.skills.tools],
 })
 
+/**
+ * Inline rename for a printed heading. Empty shows the template's heading as the placeholder,
+ * so clearing the field restores it.
+ */
+export function HeadingInput({ value, fallback, label, onChange }: { value: string; fallback: string; label: string; onChange: (value: string) => void }) {
+  return (
+    <label className="group flex items-center gap-1.5" title="Rename this heading">
+      <Pencil className="size-3 shrink-0 text-muted transition-colors group-hover:text-primary" aria-hidden />
+      <span className="sr-only">{label}</span>
+      <input
+        value={value}
+        placeholder={fallback}
+        maxLength={80}
+        onChange={(e) => onChange(e.target.value)}
+        className="min-w-0 flex-1 rounded-control border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-medium text-text transition-colors placeholder:text-text hover:border-border focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
+      />
+    </label>
+  )
+}
+
+/** Heading field shown at the top of each section in the panel. */
+export function SectionHeadingField({ doc, update, sectionKey }: SectionProps & { sectionKey: ResumeHeadingKey }) {
+  const fallback = templateHeading(doc, sectionKey)
+  return (
+    <div className="mb-4 flex flex-col gap-1">
+      <span className="text-xs font-medium text-secondary">Section heading</span>
+      <HeadingInput
+        label={`${fallback} section heading`}
+        value={doc.content.headings?.[sectionKey] ?? ''}
+        fallback={fallback}
+        onChange={(value) => update((d) => withHeading(d, sectionKey, value))}
+      />
+    </div>
+  )
+}
+
 export function ContactSection({ doc, update }: SectionProps) {
   const { contact } = doc.content
   const set = (patch: Partial<ResumeContact>) => update((d) => ({ ...d, content: { ...d.content, contact: { ...d.content.contact, ...patch } } }))
-
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Input label="Full name" autoComplete="name" value={contact.name} onChange={(e) => set({ name: e.target.value })} className={span2} />
+      <Input label="Full name" hint="The heading at the top of your resume." autoComplete="name" value={contact.name} onChange={(e) => set({ name: e.target.value })} className={span2} />
+      <Input
+        label="Job role"
+        placeholder="e.g. Frontend Developer"
+        hint="Shown between your name and contact details."
+        value={jobRoleFor(doc)}
+        onChange={(e) => set({ role: e.target.value })}
+        className={span2}
+      />
+      <Input
+        label="Tagline"
+        placeholder="e.g. Building fast, accessible web apps"
+        hint="One short line under your job role."
+        value={contact.tagline ?? ''}
+        onChange={(e) => set({ tagline: e.target.value })}
+        className={span2}
+      />
       <Input label="Email" type="email" autoComplete="email" value={contact.email} onChange={(e) => set({ email: e.target.value })} />
       <Input label="Phone" type="tel" autoComplete="tel" value={contact.phone} onChange={(e) => set({ phone: e.target.value })} />
       <Input label="Location" value={contact.location} onChange={(e) => set({ location: e.target.value })} className={span2} />
@@ -142,11 +195,32 @@ export function ProjectsSection({ doc, update }: SectionProps) {
 export function SkillsSection({ doc, update }: SectionProps) {
   const { skills } = doc.content
   const set = (patch: Partial<typeof skills>) => update((d) => ({ ...d, content: { ...d.content, skills: { ...d.content.skills, ...patch } } }))
+  const groups: Array<{ key: SkillGroupKey; placeholder: string }> = [
+    { key: 'technical', placeholder: 'e.g. React, SQL' },
+    { key: 'tools', placeholder: 'e.g. Git, Figma' },
+    { key: 'other', placeholder: 'e.g. Communication' },
+  ]
   return (
     <div className="flex flex-col gap-4">
-      <TagInput label="Technical skills" placeholder="e.g. React, SQL" value={skills.technical} onChange={(technical) => set({ technical })} />
-      <TagInput label="Tools" placeholder="e.g. Git, Figma" value={skills.tools} onChange={(tools) => set({ tools })} />
-      <TagInput label="Other relevant skills" placeholder="e.g. Communication" value={skills.other} onChange={(other) => set({ other })} />
+      {groups.map(({ key, placeholder }) => {
+        const custom = doc.content.skillLabels?.[key] ?? ''
+        return (
+          <div key={key} className="flex flex-col gap-1.5">
+            <HeadingInput
+              label={`${defaultSkillLabels[key]} group heading`}
+              value={custom}
+              fallback={defaultSkillLabels[key]}
+              onChange={(value) => update((d) => withSkillLabel(d, key, value))}
+            />
+            <TagInput
+              ariaLabel={custom.trim() || defaultSkillLabels[key]}
+              placeholder={placeholder}
+              value={skills[key]}
+              onChange={(list) => set({ ...skills, [key]: list })}
+            />
+          </div>
+        )
+      })}
     </div>
   )
 }

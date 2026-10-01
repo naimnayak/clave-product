@@ -5,6 +5,7 @@ import { ClaveLogo } from '@/components/brand/ClaveLogo'
 import { LandingContainer } from '@/components/landing/LandingContainer'
 import { LandingCtas } from '@/components/landing/LandingCtas'
 import { paths } from '@/routes/navigation'
+import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/utils/cn'
 import { navigateWithTransition } from '@/utils/transitionNavigation'
 
@@ -32,6 +33,7 @@ const drawerNavItems: NavItem[] = [
 export function LandingHeader() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  const signedIn = useAuthStore((state) => state.user !== null)
   const normalizedPath = pathname.replace(/\/+$/, '') || '/'
   const isAboutPage = normalizedPath === paths.about
   const isPricingPage = normalizedPath === paths.pricing
@@ -326,28 +328,44 @@ export function LandingHeader() {
 
           {/* Bottom Actions Area: 56px Full-width pill buttons with subtle top divider */}
           <div className="mt-auto border-t border-[#19352F]/70 pt-6 sm:pt-8 pb-8 px-6 relative z-10 flex flex-col gap-3.5 shrink-0">
-            <Link
-              to={paths.signup}
-              onClick={(e) => {
-                e.preventDefault()
-                closeMobileMenu(() => navigateWithTransition(navigate, paths.signup))
-              }}
-              className="inline-flex h-[56px] w-full items-center justify-center gap-2 rounded-full bg-[#087F5B] px-6 text-base font-semibold text-white shadow-xs transition-all hover:bg-[#056B4D] active:scale-[0.99] cursor-pointer btn-micro-interact"
-            >
-              <span>Get Started</span>
-              <ArrowRight className="size-5" aria-hidden="true" />
-            </Link>
+            {signedIn ? (
+              <Link
+                to={paths.dashboard}
+                onClick={(e) => {
+                  e.preventDefault()
+                  closeMobileMenu(() => navigateWithTransition(navigate, paths.dashboard))
+                }}
+                className="inline-flex h-[56px] w-full items-center justify-center gap-2 rounded-full bg-[#087F5B] px-6 text-base font-semibold text-white shadow-xs transition-all hover:bg-[#056B4D] active:scale-[0.99] cursor-pointer btn-micro-interact"
+              >
+                <span>Go to Dashboard</span>
+                <ArrowRight className="size-5" aria-hidden="true" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  to={paths.signup}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    closeMobileMenu(() => navigateWithTransition(navigate, paths.signup))
+                  }}
+                  className="inline-flex h-[56px] w-full items-center justify-center gap-2 rounded-full bg-[#087F5B] px-6 text-base font-semibold text-white shadow-xs transition-all hover:bg-[#056B4D] active:scale-[0.99] cursor-pointer btn-micro-interact"
+                >
+                  <span>Get Started</span>
+                  <ArrowRight className="size-5" aria-hidden="true" />
+                </Link>
 
-            <Link
-              to={paths.login}
-              onClick={(e) => {
-                e.preventDefault()
-                closeMobileMenu(() => navigateWithTransition(navigate, paths.login))
-              }}
-              className="inline-flex h-[56px] w-full items-center justify-center rounded-full border border-[#19352F] bg-white/[0.04] px-6 text-base font-medium text-[#F5F7F6] transition-all hover:bg-white/[0.08] active:scale-[0.99] cursor-pointer btn-micro-interact"
-            >
-              Log in
-            </Link>
+                <Link
+                  to={paths.login}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    closeMobileMenu(() => navigateWithTransition(navigate, paths.login))
+                  }}
+                  className="inline-flex h-[56px] w-full items-center justify-center rounded-full border border-[#19352F] bg-white/[0.04] px-6 text-base font-medium text-[#F5F7F6] transition-all hover:bg-white/[0.08] active:scale-[0.99] cursor-pointer btn-micro-interact"
+                >
+                  Log in
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Decorative Detail: Extremely subtle oversized Clave leaf outline partially cropped */}

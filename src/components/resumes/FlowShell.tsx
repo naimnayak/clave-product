@@ -10,9 +10,7 @@ interface FlowShellProps {
   /** Use the editorial serif for the title (sparingly, for the main statement of a screen). */
   editorial?: boolean
   children: ReactNode
-  /** @deprecated – kept for compatibility */
-  backTo?: string
-  /** Custom back handler for this step. If omitted, Navbar Back navigates to previous page. */
+  /** Custom back handler for this step. If omitted, the navbar's Back returns to the page that opened the flow, else /resumes/new (or /resumes from /resumes/new). */
   onBack?: () => void
 }
 

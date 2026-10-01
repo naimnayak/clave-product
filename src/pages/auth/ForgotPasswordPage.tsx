@@ -1,7 +1,7 @@
 import { ArrowLeft, MailCheck } from 'lucide-react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { AuthHeading, FormError } from '@/components/auth/AuthParts'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -10,12 +10,16 @@ import { paths } from '@/routes/navigation'
 import { requestPasswordReset } from '@/services/auth.service'
 import { isValidEmail } from '@/utils/validation'
 
-const backToLogin = (
-  <Link to={paths.login} className={`inline-flex items-center gap-2 text-sm ${linkStyles}`}>
-    <ArrowLeft className="size-4" aria-hidden />
-    Back to Log in
-  </Link>
-)
+/** Keeps the router state, so signing in still returns to the page that asked for it. */
+function BackToLogin() {
+  const { state } = useLocation()
+  return (
+    <Link to={paths.login} state={state} className={`inline-flex items-center gap-2 text-sm ${linkStyles}`}>
+      <ArrowLeft className="size-4" aria-hidden />
+      Back to Log in
+    </Link>
+  )
+}
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -57,7 +61,7 @@ export function ForgotPasswordPage() {
           <Button variant="secondary" onClick={() => setSent(false)}>
             Use a different email
           </Button>
-          {backToLogin}
+          <BackToLogin />
         </div>
       </>
     )
@@ -81,7 +85,7 @@ export function ForgotPasswordPage() {
           Send reset link
         </Button>
       </form>
-      <div className="mt-8">{backToLogin}</div>
+      <div className="mt-8"><BackToLogin /></div>
     </>
   )
 }

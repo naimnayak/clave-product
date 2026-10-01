@@ -586,3 +586,22 @@ a.btn-micro-interact {
   --icon-tile-ring: rgb(52 195 143 / 0.22);
   --editor-canvas: #0a100f;
 }
+
+/* Click-to-edit text on the resume page (name, job role, tagline, headings). Never printed: the PDF renders plain text. */
+.resume-editable {
+  border-radius: 2px;
+  outline: 1px dashed transparent;
+  outline-offset: 2px;
+  cursor: text;
+  transition: outline-color 0.15s;
+}
+.resume-editable:hover {
+  outline-color: rgb(5 107 77 / 0.45);
+}
+.resume-editable:focus {
+  outline: 1.5px solid #056b4d;
+}
+.resume-editable:empty::before {
+  content: attr(data-placeholder);
+  color: #aaa;
+}

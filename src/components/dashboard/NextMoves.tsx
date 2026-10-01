@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { NextMove } from '@/types/career'
+import { useFromHere } from '@/routes/navigation'
 import { cn } from '@/utils/cn'
 
 const tints = {
@@ -9,12 +10,14 @@ const tints = {
 }
 
 export function NextMoves({ moves }: { moves: NextMove[] }) {
+  const from = useFromHere()
   return (
     <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
       {moves.map(({ id, title, description, to, icon: Icon, tint }) => (
         <li key={id}>
           <Link
             to={to}
+            state={from}
             className="group flex h-full items-center gap-3.5 rounded-large border border-border bg-surface p-2.5 transition-all hover:-translate-y-px hover:border-primary/30 hover:shadow-card"
           >
             <span className={cn('flex size-11 shrink-0 items-center justify-center rounded-default', tints[tint])}>

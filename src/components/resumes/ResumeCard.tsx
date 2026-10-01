@@ -1,4 +1,4 @@
-import { ArrowRight, Briefcase, Clock, Copy, Download, Eye, MoreHorizontal, MoreVertical, Pencil, Target, Trash2 } from 'lucide-react'
+import { ArrowRight, Briefcase, Clock, Copy, Download, Eye, FileType, MoreHorizontal, MoreVertical, Pencil, Target, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ATSBadge } from '@/components/resumes/ATSBadge'
 import { ResumeStatusBadge } from '@/components/resumes/ResumeStatusBadge'
@@ -7,7 +7,8 @@ import { ResumeThumbnail } from '@/components/resumes/ResumeThumbnail'
 import { buttonStyles } from '@/components/ui/buttonStyles'
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/Dropdown'
 import { IconButton } from '@/components/ui/IconButton'
-import { resumePath } from '@/routes/navigation'
+import { resumePath, useFromHere } from '@/routes/navigation'
+import type { ResumeExportFormat } from '@/services/resumeExport.service'
 import type { Resume } from '@/types/resume'
 import { formatRelativeTime } from '@/utils/relativeTime'
 
@@ -20,7 +21,7 @@ interface ResumeCardProps {
   onRename: () => void
   onDuplicate: () => void
   onTailor: () => void
-  onDownload: () => void
+  onDownload: (format: ResumeExportFormat) => void
   onDelete: () => void
 }
 
@@ -33,6 +34,8 @@ function subtitle(resume: Resume) {
 
 export function ResumeCard({ resume, view, onPreview, onRename, onDuplicate, onTailor, onDownload, onDelete }: ResumeCardProps) {
   const { id, name, atsScore, updatedAt } = resume
+  // The editor's Back returns to the library (with its search) instead of a fixed page.
+  const from = useFromHere()
 
   const menu = (icon: 'vertical' | 'horizontal') => (
     <Dropdown
@@ -52,8 +55,11 @@ export function ResumeCard({ resume, view, onPreview, onRename, onDuplicate, onT
       <DropdownItem icon={Target} onSelect={onTailor}>
         Tailor to Job
       </DropdownItem>
-      <DropdownItem icon={Download} onSelect={onDownload}>
+      <DropdownItem icon={Download} onSelect={() => onDownload('pdf')}>
         Download PDF
+      </DropdownItem>
+      <DropdownItem icon={FileType} onSelect={() => onDownload('docx')}>
+        Download Word (DOCX)
       </DropdownItem>
       <DropdownSeparator />
       <DropdownItem icon={Trash2} destructive onSelect={onDelete}>
@@ -92,7 +98,7 @@ export function ResumeCard({ resume, view, onPreview, onRename, onDuplicate, onT
           <button type="button" onClick={onPreview} className={`${buttonStyles({ variant: 'secondary', size: 'sm' })} hidden sm:inline-flex`}>
             Preview
           </button>
-          <Link to={resumePath(id)} aria-label={`Open Resume: ${name}`} className={buttonStyles({ size: 'sm' })}>
+          <Link to={resumePath(id)} state={from} aria-label={`Open Resume: ${name}`} className={buttonStyles({ size: 'sm' })}>
             Open
           </Link>
           {menu('vertical')}
@@ -128,7 +134,7 @@ export function ResumeCard({ resume, view, onPreview, onRename, onDuplicate, onT
             <Eye className="size-3.5" aria-hidden />
             Preview
           </button>
-          <Link to={resumePath(id)} aria-label={`Open Resume: ${name}`} className={`${buttonStyles({ size: 'sm' })} h-7! flex-[1.4] gap-1.5! text-xs!`}>
+          <Link to={resumePath(id)} state={from} aria-label={`Open Resume: ${name}`} className={`${buttonStyles({ size: 'sm' })} h-7! flex-[1.4] gap-1.5! text-xs!`}>
             Open
             <ArrowRight className="size-3.5" aria-hidden />
           </Link>
